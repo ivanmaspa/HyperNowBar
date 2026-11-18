@@ -10,6 +10,7 @@ import android.graphics.Rect;
 import android.graphics.RectF;
 import android.graphics.Shader;
 import android.graphics.Typeface;
+import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
 import android.os.Handler;
@@ -20,6 +21,7 @@ import android.view.Gravity;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewOutlineProvider;
+import android.view.animation.Interpolator;
 import android.view.animation.PathInterpolator;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
@@ -33,12 +35,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Unified One UI 7 Now Bar + ColorOS Fluid Glass + Monochrome B&W Capsule overlay (v2.4-beta).
- * Features:
- *  - Inline 1-tap Play/Pause + Next track controls right inside the collapsed pill
- *  - Native HyperOS GPU MiBackgroundBlur / SurfaceFlinger BackgroundBlurDrawable
- *  - Pure continuously scrollable 3D iOS overlapping notification card deck (StackedNotifDeckView)
- *  - Expanded sheet anchored strictly ABOVE the under-display fingerprint scanner
+ * HyperNowBar 1.G.1 — Unified One UI 7 Now Bar + ColorOS Glass + iOS Liquid Glass + Beta Compact Adaptive Mode.
  */
 public final class NowBarOverlayView extends FrameLayout {
 
@@ -54,7 +51,9 @@ public final class NowBarOverlayView extends FrameLayout {
         void onClearAllNotifications();
     }
 
-    private static final PathInterpolator FLUID_SPRING = new PathInterpolator(0.22f, 1.0f, 0.36f, 1.0f);
+    private static final Interpolator INTERP_IOS_SPRING = new PathInterpolator(0.18f, 1.14f, 0.32f, 1.0f);
+    private static final Interpolator INTERP_HYPER_FLUID = new PathInterpolator(0.22f, 1.0f, 0.36f, 1.0f);
+    private static final Interpolator INTERP_SLIDE = new PathInterpolator(0.16f, 1.0f, 0.30f, 1.0f);
 
     private final ActionCallback callback;
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
@@ -70,6 +69,7 @@ public final class NowBarOverlayView extends FrameLayout {
     private final View scrimView;
     private final LinearLayout capsulePill;
     private final LinearLayout expandedSheet;
+    private final FrameLayout handleWrap;
 
     // Collapsed capsule children
     private final LinearLayout pillMediaGroup;
@@ -95,6 +95,7 @@ public final class NowBarOverlayView extends FrameLayout {
     private final LinearLayout expSwitchPlayerBtn;
     private final TextView expSwitchPlayerText;
     private final SeekBar expSeekBar;
+    private final LinearLayout timeRow;
     private final TextView expPosText;
     private final TextView expDurText;
     private final ImageView expPrevBtn;
@@ -102,6 +103,7 @@ public final class NowBarOverlayView extends FrameLayout {
     private final ImageView expNextBtn;
 
     private final LinearLayout notifSection;
+    private final LinearLayout notifHeader;
     private final TextView notifHeaderTitle;
     private final TextView notifClearBtn;
     private final StackedNotifDeckView notifDeckView;
@@ -125,9 +127,9 @@ public final class NowBarOverlayView extends FrameLayout {
         setClipChildren(false);
         setClipToPadding(false);
 
-        // 1. Scrim backdrop (only active when expanded)
+        // 1. Full-screen Backdrop Blur + Dim Scrim (hidden in Beta Compact Mode!)
         scrimView = new View(context);
-        scrimView.setBackgroundColor(0x9905070D);
+        scrimView.setBackgroundColor(0x7A05070D);
         scrimView.setAlpha(0f);
         scrimView.setVisibility(GONE);
         scrimView.setClickable(true);
@@ -143,9 +145,11 @@ public final class NowBarOverlayView extends FrameLayout {
         capsulePill.setElevation(dp(10));
         capsulePill.setClickable(true);
         capsulePill.setFocusable(true);
-        capsulePill.setOnClickListener(v -> expand());
+        capsulePill.setOnClickListener(v -> {
+            bounceView(v);
+            expand();
+        });
 
-        // Media info + inline quick buttons inside pill
         pillMediaGroup = new LinearLayout(context);
         pillMediaGroup.setOrientation(LinearLayout.HORIZONTAL);
         pillMediaGroup.setGravity(Gravity.CENTER_VERTICAL);
@@ -180,6 +184,7 @@ public final class NowBarOverlayView extends FrameLayout {
 
         pillPlayPauseBtn = createControlButton(VectorIcons.ICON_PLAY, dp(28), dp(6), Color.WHITE, 0x24FFFFFF);
         pillPlayPauseBtn.setOnClickListener(v -> {
+            bounceView(v);
             if (this.callback != null) this.callback.onPlayPause();
         });
         LinearLayout.LayoutParams qPlayLp = new LinearLayout.LayoutParams(dp(28), dp(28));
@@ -188,6 +193,7 @@ public final class NowBarOverlayView extends FrameLayout {
 
         pillNextBtn = createControlButton(VectorIcons.ICON_NEXT, dp(28), dp(6), Color.WHITE, 0x1AFFFFFF);
         pillNextBtn.setOnClickListener(v -> {
+            bounceView(v);
             if (this.callback != null) this.callback.onNext();
         });
         pillQuickControls.addView(pillNextBtn, new LinearLayout.LayoutParams(dp(28), dp(28)));
@@ -195,7 +201,6 @@ public final class NowBarOverlayView extends FrameLayout {
         pillMediaGroup.addView(pillQuickControls);
         capsulePill.addView(pillMediaGroup);
 
-        // Divider between media & notifications
         pillDivider = new View(context);
         pillDivider.setBackgroundColor(0x38FFFFFF);
         LinearLayout.LayoutParams divLp = new LinearLayout.LayoutParams(dp(1), dp(18));
@@ -203,7 +208,6 @@ public final class NowBarOverlayView extends FrameLayout {
         divLp.rightMargin = dp(8);
         capsulePill.addView(pillDivider, divLp);
 
-        // Notification group inside pill
         pillNotifGroup = new LinearLayout(context);
         pillNotifGroup.setOrientation(LinearLayout.HORIZONTAL);
         pillNotifGroup.setGravity(Gravity.CENTER_VERTICAL);
@@ -253,7 +257,7 @@ public final class NowBarOverlayView extends FrameLayout {
         pillLp.bottomMargin = dp(config.bottomMarginDp);
         addView(capsulePill, pillLp);
 
-        // 3. Expanded Frosted Glass Sheet (anchored strictly ABOVE the optical fingerprint scanner)
+        // 3. Expanded Layout Container (Normal Menu Sheet OR Transparent Borderless Adaptive Beta Host!)
         expandedSheet = new LinearLayout(context);
         expandedSheet.setOrientation(LinearLayout.VERTICAL);
         expandedSheet.setPadding(dp(16), dp(10), dp(16), dp(16));
@@ -261,9 +265,9 @@ public final class NowBarOverlayView extends FrameLayout {
         expandedSheet.setVisibility(GONE);
         expandedSheet.setClickable(true);
         expandedSheet.setClipChildren(false);
+        expandedSheet.setClipToPadding(false);
 
-        // Top drag/collapse handle
-        FrameLayout handleWrap = new FrameLayout(context);
+        handleWrap = new FrameLayout(context);
         handleWrap.setPadding(0, dp(2), 0, dp(12));
         final float[] dragStartY = new float[1];
         handleWrap.setOnTouchListener((v, ev) -> {
@@ -284,8 +288,8 @@ public final class NowBarOverlayView extends FrameLayout {
                     } else {
                         expandedSheet.animate()
                                 .translationY(0f)
-                                .setDuration(200)
-                                .setInterpolator(FLUID_SPRING)
+                                .setDuration(scaledDuration(200))
+                                .setInterpolator(resolveInterpolator())
                                 .start();
                     }
                     return true;
@@ -315,6 +319,7 @@ public final class NowBarOverlayView extends FrameLayout {
         mediaTopRow.setGravity(Gravity.CENTER_VERTICAL);
         mediaTopRow.setClickable(true);
         mediaTopRow.setOnClickListener(v -> {
+            bounceView(v);
             if (config.tapMediaOpensApp && this.callback != null) {
                 this.callback.onOpenMediaApp();
             }
@@ -354,7 +359,7 @@ public final class NowBarOverlayView extends FrameLayout {
         expEqLp.leftMargin = dp(8);
         mediaTopRow.addView(expEqualizer, expEqLp);
 
-        // Compact multi-player switcher button (ONLY shown when 2+ music apps are open!)
+        // Compact multi-player switcher button (ONLY visible when 2+ music apps are open!)
         expSwitchPlayerBtn = new LinearLayout(context);
         expSwitchPlayerBtn.setOrientation(LinearLayout.HORIZONTAL);
         expSwitchPlayerBtn.setGravity(Gravity.CENTER_VERTICAL);
@@ -368,6 +373,7 @@ public final class NowBarOverlayView extends FrameLayout {
         expSwitchPlayerBtn.setBackground(swBg);
         expSwitchPlayerBtn.setVisibility(GONE);
         expSwitchPlayerBtn.setOnClickListener(v -> {
+            bounceView(v);
             if (this.callback != null) this.callback.onSwitchPlayer();
         });
 
@@ -417,7 +423,7 @@ public final class NowBarOverlayView extends FrameLayout {
         sbLp.topMargin = dp(8);
         mediaCard.addView(expSeekBar, sbLp);
 
-        LinearLayout timeRow = new LinearLayout(context);
+        timeRow = new LinearLayout(context);
         timeRow.setOrientation(LinearLayout.HORIZONTAL);
         expPosText = new TextView(context);
         expPosText.setTextColor(0x99FFFFFF);
@@ -441,13 +447,22 @@ public final class NowBarOverlayView extends FrameLayout {
         ctrlRowLp.topMargin = dp(6);
 
         expPrevBtn = createControlButton(VectorIcons.ICON_PREV, dp(40), dp(10), Color.WHITE, 0x1AFFFFFF);
-        expPrevBtn.setOnClickListener(v -> { if (this.callback != null) this.callback.onPrevious(); });
+        expPrevBtn.setOnClickListener(v -> {
+            bounceView(v);
+            if (this.callback != null) this.callback.onPrevious();
+        });
 
         expPlayPauseBtn = createControlButton(VectorIcons.ICON_PLAY, dp(48), dp(11), 0xFF0A0D14, CapsuleColors.DEFAULT_ACCENT);
-        expPlayPauseBtn.setOnClickListener(v -> { if (this.callback != null) this.callback.onPlayPause(); });
+        expPlayPauseBtn.setOnClickListener(v -> {
+            bounceView(v);
+            if (this.callback != null) this.callback.onPlayPause();
+        });
 
         expNextBtn = createControlButton(VectorIcons.ICON_NEXT, dp(40), dp(10), Color.WHITE, 0x1AFFFFFF);
-        expNextBtn.setOnClickListener(v -> { if (this.callback != null) this.callback.onNext(); });
+        expNextBtn.setOnClickListener(v -> {
+            bounceView(v);
+            if (this.callback != null) this.callback.onNext();
+        });
 
         LinearLayout.LayoutParams prevLp = new LinearLayout.LayoutParams(dp(40), dp(40));
         prevLp.rightMargin = dp(24);
@@ -471,7 +486,7 @@ public final class NowBarOverlayView extends FrameLayout {
                 LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT);
         nsLp.topMargin = dp(12);
 
-        LinearLayout notifHeader = new LinearLayout(context);
+        notifHeader = new LinearLayout(context);
         notifHeader.setOrientation(LinearLayout.HORIZONTAL);
         notifHeader.setGravity(Gravity.CENTER_VERTICAL);
         notifHeader.setPadding(dp(2), 0, dp(2), dp(8));
@@ -493,6 +508,7 @@ public final class NowBarOverlayView extends FrameLayout {
         clearBg.setCornerRadius(dp(12));
         notifClearBtn.setBackground(clearBg);
         notifClearBtn.setOnClickListener(v -> {
+            bounceView(v);
             if (this.callback != null) this.callback.onClearAllNotifications();
         });
         notifHeader.addView(notifClearBtn);
@@ -546,12 +562,37 @@ public final class NowBarOverlayView extends FrameLayout {
         if (expanded || getVisibility() != VISIBLE || capsulePill.getVisibility() != VISIBLE) {
             return false;
         }
-        capsulePill.getLocationOnScreen(tmpLoc);
-        int pad = dp(6);
+        return isPointInsideView(capsulePill, rawX, rawY, dp(6));
+    }
+
+    /**
+     * Used in Beta Compact Mode (where there is no outer modal menu/scrim):
+     * isolates ONLY touches inside the floating player or floating notification deck.
+     */
+    public boolean isTouchInsideExpandedContent(float rawX, float rawY) {
+        if (!expanded || getVisibility() != VISIBLE) return false;
+        if (mediaCard.getVisibility() == VISIBLE && isPointInsideView(mediaCard, rawX, rawY, dp(4))) {
+            return true;
+        }
+        if (notifSection.getVisibility() == VISIBLE && isPointInsideView(notifSection, rawX, rawY, dp(4))) {
+            return true;
+        }
+        return false;
+    }
+
+    private boolean isPointInsideView(View v, float rawX, float rawY, int pad) {
+        v.getLocationOnScreen(tmpLoc);
         return rawX >= (tmpLoc[0] - pad)
-                && rawX <= (tmpLoc[0] + capsulePill.getWidth() + pad)
+                && rawX <= (tmpLoc[0] + v.getWidth() + pad)
                 && rawY >= (tmpLoc[1] - pad)
-                && rawY <= (tmpLoc[1] + capsulePill.getHeight() + pad);
+                && rawY <= (tmpLoc[1] + v.getHeight() + pad);
+    }
+
+    public void onScreenTurnedOff() {
+        // Especially important in Beta Compact Mode: turning screen off & back on folds back into Now Bar pill!
+        if (expanded) {
+            collapseImmediate();
+        }
     }
 
     @Override
@@ -586,7 +627,12 @@ public final class NowBarOverlayView extends FrameLayout {
         pillLp.bottomMargin = previewMode ? dp(18) : dp(config.bottomMarginDp);
         capsulePill.setLayoutParams(pillLp);
 
+        int maxW = getContext().getResources().getDisplayMetrics().widthPixels;
+        int targetSheetW = config.betaCompactMode
+                ? Math.min(maxW - dp(44), dp(336))
+                : Math.min(maxW - dp(28), dp(376));
         LayoutParams sheetLp = (LayoutParams) expandedSheet.getLayoutParams();
+        sheetLp.width = targetSheetW;
         sheetLp.bottomMargin = previewMode ? dp(14) : dp(Math.max(config.sheetBottomMarginDp, config.bottomMarginDp));
         expandedSheet.setLayoutParams(sheetLp);
 
@@ -594,12 +640,78 @@ public final class NowBarOverlayView extends FrameLayout {
                 : (config.capsuleWidthMode == NowBarConfig.WIDTH_WIDE ? 148 : 106);
         pillTitleView.setMaxWidth(dp(titleMaxDp));
         pillNotifSnippet.setMaxWidth(dp(titleMaxDp + 24));
+        pillTitleView.setTextSize(TypedValue.COMPLEX_UNIT_SP, config.pillFontSizeSp);
+        pillNotifSnippet.setTextSize(TypedValue.COMPLEX_UNIT_SP, config.pillFontSizeSp);
 
-        int scrimAlpha255 = Math.max(0, Math.min(235, (config.scrimAlpha * 255) / 100));
-        scrimView.setBackgroundColor(Color.argb(scrimAlpha255, 5, 7, 13));
-
+        applyBetaLayoutDensity();
         applyVisualTheme();
         refreshContent();
+    }
+
+    private void applyBetaLayoutDensity() {
+        boolean beta = config.betaCompactMode;
+        handleWrap.setVisibility(beta ? GONE : VISIBLE);
+        expandedSheet.setClickable(!beta);
+
+        if (beta) {
+            expandedSheet.setPadding(0, 0, 0, 0);
+            expandedSheet.setElevation(0f);
+            mediaCard.setPadding(dp(10), dp(8), dp(10), dp(8));
+
+            LinearLayout.LayoutParams artLp = (LinearLayout.LayoutParams) expArtView.getLayoutParams();
+            artLp.width = dp(40);
+            artLp.height = dp(40);
+            artLp.rightMargin = dp(9);
+            expArtView.setLayoutParams(artLp);
+            clipRounded(expArtView, dp(10));
+
+            expTitleView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13.5f);
+            expArtistView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f);
+            expSeekBar.setPadding(dp(2), dp(2), dp(2), 0);
+            timeRow.setVisibility(GONE);
+
+            resizeCtrl(expPrevBtn, 32, 7);
+            resizeCtrl(expPlayPauseBtn, 38, 8);
+            resizeCtrl(expNextBtn, 32, 7);
+
+            LinearLayout.LayoutParams nsLp = (LinearLayout.LayoutParams) notifSection.getLayoutParams();
+            nsLp.topMargin = dp(8);
+            notifSection.setLayoutParams(nsLp);
+            notifHeader.setPadding(dp(4), 0, dp(4), dp(5));
+        } else {
+            expandedSheet.setPadding(dp(16), dp(10), dp(16), dp(16));
+            expandedSheet.setElevation(dp(18));
+            mediaCard.setPadding(dp(14), dp(12), dp(14), dp(12));
+
+            LinearLayout.LayoutParams artLp = (LinearLayout.LayoutParams) expArtView.getLayoutParams();
+            artLp.width = dp(54);
+            artLp.height = dp(54);
+            artLp.rightMargin = dp(12);
+            expArtView.setLayoutParams(artLp);
+            clipRounded(expArtView, dp(14));
+
+            expTitleView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15.5f);
+            expArtistView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12.5f);
+            expSeekBar.setPadding(dp(4), dp(6), dp(4), dp(2));
+            timeRow.setVisibility(VISIBLE);
+
+            resizeCtrl(expPrevBtn, 40, 10);
+            resizeCtrl(expPlayPauseBtn, 48, 11);
+            resizeCtrl(expNextBtn, 40, 10);
+
+            LinearLayout.LayoutParams nsLp = (LinearLayout.LayoutParams) notifSection.getLayoutParams();
+            nsLp.topMargin = dp(12);
+            notifSection.setLayoutParams(nsLp);
+            notifHeader.setPadding(dp(2), 0, dp(2), dp(8));
+        }
+    }
+
+    private void resizeCtrl(ImageView btn, int sizeDp, int padDp) {
+        LinearLayout.LayoutParams lp = (LinearLayout.LayoutParams) btn.getLayoutParams();
+        lp.width = dp(sizeDp);
+        lp.height = dp(sizeDp);
+        btn.setLayoutParams(lp);
+        btn.setPadding(dp(padDp), dp(padDp), dp(padDp), dp(padDp));
     }
 
     public void setMediaState(MediaState state) {
@@ -634,7 +746,7 @@ public final class NowBarOverlayView extends FrameLayout {
             if (shouldRenderAnyContent()) {
                 setAlpha(0f);
                 setVisibility(VISIBLE);
-                animate().alpha(1f).setDuration(200).setInterpolator(FLUID_SPRING).start();
+                animate().alpha(1f).setDuration(scaledDuration(200)).setInterpolator(resolveInterpolator()).start();
             }
         }
     }
@@ -648,30 +760,48 @@ public final class NowBarOverlayView extends FrameLayout {
         expanded = true;
         refreshContent();
 
-        scrimView.setVisibility(VISIBLE);
-        scrimView.setAlpha(0f);
-        scrimView.animate().alpha(1f).setDuration(210).start();
+        Interpolator interp = resolveInterpolator();
+        long expandDur = scaledDuration(config.animStyle == NowBarConfig.ANIM_INSTANT ? 80 : 300);
+        long pillOutDur = scaledDuration(config.animStyle == NowBarConfig.ANIM_INSTANT ? 50 : 140);
+
+        if (!config.betaCompactMode) {
+            scrimView.setVisibility(VISIBLE);
+            scrimView.setAlpha(0f);
+            scrimView.animate().alpha(1f).setDuration(scaledDuration(220)).start();
+        } else {
+            scrimView.setVisibility(GONE);
+        }
 
         capsulePill.animate()
                 .alpha(0f)
-                .scaleX(0.92f)
-                .scaleY(0.92f)
-                .setDuration(140)
+                .scaleX(0.90f)
+                .scaleY(0.90f)
+                .setDuration(pillOutDur)
                 .withEndAction(() -> capsulePill.setVisibility(INVISIBLE))
                 .start();
 
         expandedSheet.setVisibility(VISIBLE);
         expandedSheet.setAlpha(0f);
-        expandedSheet.setScaleX(0.92f);
-        expandedSheet.setScaleY(0.88f);
-        expandedSheet.setTranslationY(dp(24));
+        if (config.animStyle == NowBarConfig.ANIM_SLIDE_UP) {
+            expandedSheet.setScaleX(1.0f);
+            expandedSheet.setScaleY(1.0f);
+            expandedSheet.setTranslationY(dp(64));
+        } else if (config.animStyle == NowBarConfig.ANIM_INSTANT) {
+            expandedSheet.setScaleX(0.98f);
+            expandedSheet.setScaleY(0.98f);
+            expandedSheet.setTranslationY(dp(6));
+        } else {
+            expandedSheet.setScaleX(0.88f);
+            expandedSheet.setScaleY(0.84f);
+            expandedSheet.setTranslationY(dp(28));
+        }
         expandedSheet.animate()
                 .alpha(1f)
                 .scaleX(1f)
                 .scaleY(1f)
                 .translationY(0f)
-                .setDuration(280)
-                .setInterpolator(FLUID_SPRING)
+                .setDuration(expandDur)
+                .setInterpolator(interp)
                 .start();
 
         mainHandler.removeCallbacks(progressTicker);
@@ -686,19 +816,24 @@ public final class NowBarOverlayView extends FrameLayout {
         notifDeckView.resetToTop();
         mainHandler.removeCallbacks(progressTicker);
 
-        scrimView.animate()
-                .alpha(0f)
-                .setDuration(180)
-                .withEndAction(() -> scrimView.setVisibility(GONE))
-                .start();
+        Interpolator interp = resolveInterpolator();
+        long colDur = scaledDuration(config.animStyle == NowBarConfig.ANIM_INSTANT ? 70 : 200);
+
+        if (scrimView.getVisibility() == VISIBLE) {
+            scrimView.animate()
+                    .alpha(0f)
+                    .setDuration(colDur)
+                    .withEndAction(() -> scrimView.setVisibility(GONE))
+                    .start();
+        }
 
         expandedSheet.animate()
                 .alpha(0f)
-                .scaleX(0.92f)
-                .scaleY(0.90f)
-                .translationY(dp(20))
-                .setDuration(190)
-                .setInterpolator(FLUID_SPRING)
+                .scaleX(0.90f)
+                .scaleY(0.88f)
+                .translationY(dp(22))
+                .setDuration(colDur)
+                .setInterpolator(interp)
                 .withEndAction(() -> {
                     expandedSheet.setVisibility(GONE);
                     expandedSheet.setTranslationY(0f);
@@ -708,14 +843,14 @@ public final class NowBarOverlayView extends FrameLayout {
         if (shouldRenderAnyContent()) {
             capsulePill.setVisibility(VISIBLE);
             capsulePill.setAlpha(0f);
-            capsulePill.setScaleX(0.92f);
-            capsulePill.setScaleY(0.92f);
+            capsulePill.setScaleX(0.90f);
+            capsulePill.setScaleY(0.90f);
             capsulePill.animate()
                     .alpha(1f)
                     .scaleX(1f)
                     .scaleY(1f)
-                    .setDuration(220)
-                    .setInterpolator(FLUID_SPRING)
+                    .setDuration(scaledDuration(230))
+                    .setInterpolator(interp)
                     .start();
         }
     }
@@ -735,6 +870,33 @@ public final class NowBarOverlayView extends FrameLayout {
         capsulePill.setScaleY(1f);
     }
 
+    private Interpolator resolveInterpolator() {
+        switch (config.animStyle) {
+            case NowBarConfig.ANIM_SPRING_IOS: return INTERP_IOS_SPRING;
+            case NowBarConfig.ANIM_SLIDE_UP: return INTERP_SLIDE;
+            default: return INTERP_HYPER_FLUID;
+        }
+    }
+
+    private long scaledDuration(long baseMs) {
+        if (config.animStyle == NowBarConfig.ANIM_INSTANT) return Math.min(80L, baseMs);
+        int pct = Math.max(50, Math.min(180, config.animSpeedPct));
+        return Math.max(60L, (baseMs * pct) / 100L);
+    }
+
+    private void bounceView(View v) {
+        if (config.animStyle == NowBarConfig.ANIM_INSTANT) return;
+        v.animate().cancel();
+        v.setScaleX(0.92f);
+        v.setScaleY(0.92f);
+        v.animate()
+                .scaleX(1f)
+                .scaleY(1f)
+                .setDuration(scaledDuration(200))
+                .setInterpolator(INTERP_IOS_SPRING)
+                .start();
+    }
+
     private boolean hasVisibleMedia() {
         if (!mediaState.hasSession) return false;
         return mediaState.isPlaying || config.showMediaWhenPaused;
@@ -749,39 +911,73 @@ public final class NowBarOverlayView extends FrameLayout {
         if (config.style == NowBarConfig.STYLE_MONOCHROME_BW) {
             return 0xFFE6E9F0;
         }
-        if (!config.dynamicGlowColor) return CapsuleColors.DEFAULT_ACCENT;
+        if (!config.dynamicGlowColor) return config.manualAccentColor;
         if (hasVisibleMedia()) return mediaState.accentColor;
         if (!notifications.isEmpty()) return notifications.get(0).accentColor;
-        return CapsuleColors.DEFAULT_ACCENT;
+        return config.manualAccentColor;
     }
 
     private void applyVisualTheme() {
         int accent = resolveActiveAccent();
         boolean useSystemBlur = config.systemBlurEnabled && !previewMode;
-        int baseAlphaPct = useSystemBlur
-                ? Math.max(38, Math.min(82, config.capsuleAlpha - 14))
-                : config.capsuleAlpha;
-        int alpha255 = Math.max(96, Math.min(255, (baseAlphaPct * 255) / 100));
-        int sheetAlpha255 = Math.min(242, alpha255 + (useSystemBlur ? 18 : 14));
+        boolean liquid = config.iosLiquidGlass;
+        boolean beta = config.betaCompactMode;
+        float borderPx = config.borderWidthDp * getResources().getDisplayMetrics().density * 0.65f;
+
+        int baseAlphaPct = liquid
+                ? Math.max(24, Math.min(60, config.capsuleAlpha - 24))
+                : (useSystemBlur ? Math.max(36, Math.min(82, config.capsuleAlpha - 14)) : config.capsuleAlpha);
+        int alpha255 = Math.max(70, Math.min(255, (baseAlphaPct * 255) / 100));
+        int sheetAlpha255 = Math.min(242, alpha255 + (liquid ? 10 : (useSystemBlur ? 18 : 14)));
         int pillRadiusPx = dp(config.cornerRadiusDp);
         int sheetRadiusPx = dp(Math.max(18, config.cornerRadiusDp + 4));
 
-        Drawable pillGlass = new GlassCapsuleDrawable(config.style, accent, alpha255, pillRadiusPx, true);
-        Drawable sheetGlass = new GlassCapsuleDrawable(config.style, accent, sheetAlpha255, sheetRadiusPx, false);
-
+        // 1. Collapsed Capsule Pill
+        Drawable pillGlass = new GlassCapsuleDrawable(config.style, liquid, accent, alpha255, pillRadiusPx, borderPx, true);
         SystemBlurHelper.applyBackdropBlur(capsulePill, pillGlass, useSystemBlur, config.blurRadiusPx, pillRadiusPx);
-        SystemBlurHelper.applyBackdropBlur(expandedSheet, sheetGlass, useSystemBlur,
-                Math.min(180, (int) (config.blurRadiusPx * 1.15f)), sheetRadiusPx);
 
-        GradientDrawable mediaCardBg = new GradientDrawable(
-                GradientDrawable.Orientation.TL_BR,
-                new int[] {
-                    CapsuleColors.withAlpha(accent, config.style == NowBarConfig.STYLE_MONOCHROME_BW ? 26 : 42),
-                    0x1AFFFFFF
-                });
-        mediaCardBg.setCornerRadius(dp(Math.max(14, config.cornerRadiusDp - 4)));
-        mediaCardBg.setStroke(dp(1), CapsuleColors.withAlpha(accent, 65));
-        mediaCard.setBackground(mediaCardBg);
+        // 2. Full-screen Backdrop Blur + Dim Scrim when expanded (Normal mode)
+        int scrimAlpha255 = Math.max(0, Math.min(235, (config.scrimAlpha * 255) / 100));
+        ColorDrawable scrimTint = new ColorDrawable(Color.argb(scrimAlpha255, 6, 8, 15));
+        boolean useBackdropBlur = !beta && config.backdropBlurEnabled && config.backdropBlurRadiusPx > 0 && !previewMode;
+        SystemBlurHelper.applyBackdropBlur(scrimView, scrimTint, useBackdropBlur, config.backdropBlurRadiusPx, 0f);
+
+        // 3. Expanded Sheet vs Borderless Adaptive Beta Compact Mode
+        if (beta) {
+            SystemBlurHelper.applyBackdropBlur(expandedSheet, null, false, 0, 0f);
+            expandedSheet.setClipToOutline(false);
+            expandedSheet.setBackground(null);
+
+            int cardRad = dp(Math.max(16, config.cornerRadiusDp - 2));
+            Drawable betaMediaBg = new GlassCapsuleDrawable(config.style, liquid, accent, Math.min(235, alpha255 + 24), cardRad, borderPx, true);
+            SystemBlurHelper.applyBackdropBlur(mediaCard, betaMediaBg, useSystemBlur, config.blurRadiusPx, cardRad);
+        } else {
+            Drawable sheetGlass = new GlassCapsuleDrawable(config.style, liquid, accent, sheetAlpha255, sheetRadiusPx, borderPx, false);
+            SystemBlurHelper.applyBackdropBlur(expandedSheet, sheetGlass, useSystemBlur,
+                    Math.min(180, (int) (config.blurRadiusPx * 1.15f)), sheetRadiusPx);
+
+            int cardRad = dp(Math.max(14, config.cornerRadiusDp - 4));
+            GradientDrawable mediaCardBg;
+            if (liquid) {
+                mediaCardBg = new GradientDrawable(
+                        GradientDrawable.Orientation.TL_BR,
+                        new int[] {0x48FFFFFF, CapsuleColors.withAlpha(accent, 34), 0x22FFFFFF});
+                mediaCardBg.setStroke(dp(1), 0x80FFFFFF);
+            } else {
+                mediaCardBg = new GradientDrawable(
+                        GradientDrawable.Orientation.TL_BR,
+                        new int[] {
+                            CapsuleColors.withAlpha(accent, config.style == NowBarConfig.STYLE_MONOCHROME_BW ? 24 : 42),
+                            0x1AFFFFFF
+                        });
+                mediaCardBg.setStroke(dp(1), CapsuleColors.withAlpha(accent, 65));
+            }
+            mediaCardBg.setCornerRadius(cardRad);
+            SystemBlurHelper.applyBackdropBlur(mediaCard, mediaCardBg, false, 0, cardRad);
+        }
+
+        // 4. Stacked 3D Notification Deck appearance
+        notifDeckView.setVisualOptions(beta, liquid, beta && useSystemBlur, config.blurRadiusPx);
 
         pillEqualizer.setBarColor(accent);
         expEqualizer.setBarColor(accent);
@@ -819,7 +1015,6 @@ public final class NowBarOverlayView extends FrameLayout {
             }
         }
 
-        // --- Collapsed Pill ---
         pillMediaGroup.setVisibility(showMedia ? VISIBLE : GONE);
         pillNotifGroup.setVisibility(showNotifs ? VISIBLE : GONE);
         pillDivider.setVisibility((showMedia && showNotifs) ? VISIBLE : GONE);
@@ -883,7 +1078,6 @@ public final class NowBarOverlayView extends FrameLayout {
             pillNotifBadge.setVisibility(VISIBLE);
         }
 
-        // --- Expanded Sheet ---
         mediaCard.setVisibility(showMedia ? VISIBLE : GONE);
         if (showMedia) {
             if (mediaState.artwork != null && !mediaState.artwork.isRecycled()) {
@@ -892,7 +1086,7 @@ public final class NowBarOverlayView extends FrameLayout {
             } else {
                 expArtView.setImageDrawable(VectorIcons.create(VectorIcons.ICON_MUSIC, Color.WHITE));
                 GradientDrawable ph = new GradientDrawable();
-                ph.setCornerRadius(dp(14));
+                ph.setCornerRadius(dp(config.betaCompactMode ? 10 : 14));
                 ph.setColor(CapsuleColors.withAlpha(resolveActiveAccent(), 95));
                 expArtView.setBackground(ph);
             }
@@ -918,9 +1112,15 @@ public final class NowBarOverlayView extends FrameLayout {
             expEqualizer.setPlaying(false);
         }
 
-        notifDeckView.setVisibility(showNotifs ? VISIBLE : GONE);
-        notifClearBtn.setVisibility(showNotifs ? VISIBLE : GONE);
-        notifEmptyHint.setVisibility(showNotifs ? GONE : VISIBLE);
+        // In Beta Compact Mode, hide the entire notifications section if empty to occupy zero extra height!
+        if (config.betaCompactMode && !showNotifs) {
+            notifSection.setVisibility(GONE);
+        } else {
+            notifSection.setVisibility(VISIBLE);
+            notifDeckView.setVisibility(showNotifs ? VISIBLE : GONE);
+            notifClearBtn.setVisibility(showNotifs ? VISIBLE : GONE);
+            notifEmptyHint.setVisibility((!showNotifs && !config.betaCompactMode) ? VISIBLE : GONE);
+        }
         notifDeckView.setItems(notifications);
         updateNotifHeaderCounter(notifDeckView.getActiveIndex(), notifications.size());
     }
@@ -979,20 +1179,26 @@ public final class NowBarOverlayView extends FrameLayout {
 
     private static final class GlassCapsuleDrawable extends Drawable {
         private final int style;
+        private final boolean liquidGlass;
         private final int accentColor;
         private final int alpha255;
         private final float cornerRadius;
+        private final float borderWidthPx;
         private final boolean isPill;
 
         private final Paint fillPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final Paint sheenPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
         private final Paint borderPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
         private final RectF boundsF = new RectF();
 
-        GlassCapsuleDrawable(int style, int accentColor, int alpha255, float cornerRadius, boolean isPill) {
+        GlassCapsuleDrawable(int style, boolean liquidGlass, int accentColor, int alpha255,
+                             float cornerRadius, float borderWidthPx, boolean isPill) {
             this.style = style;
+            this.liquidGlass = liquidGlass;
             this.accentColor = accentColor;
             this.alpha255 = alpha255;
             this.cornerRadius = cornerRadius;
+            this.borderWidthPx = borderWidthPx;
             this.isPill = isPill;
             borderPaint.setStyle(Paint.Style.STROKE);
         }
@@ -1000,9 +1206,36 @@ public final class NowBarOverlayView extends FrameLayout {
         @Override
         protected void onBoundsChange(Rect bounds) {
             super.onBoundsChange(bounds);
-            float inset = 2f;
+            float inset = Math.max(1.5f, borderWidthPx * 0.5f);
             boundsF.set(bounds.left + inset, bounds.top + inset, bounds.right - inset, bounds.bottom - inset);
             if (boundsF.width() <= 0 || boundsF.height() <= 0) return;
+
+            if (liquidGlass) {
+                // Authentic iOS Liquid Glass: luminous crystal gradient + bright specular top-left caustic sheen
+                int topCrystal = CapsuleColors.withAlpha(0xFFFFFFFF, Math.min(115, alpha255 / 2 + 28));
+                int midTint = CapsuleColors.withAlpha(0xFF1A2030, Math.min(145, alpha255));
+                int botCrystal = CapsuleColors.withAlpha(0xFF283248, Math.min(125, alpha255));
+                fillPaint.setShader(new LinearGradient(
+                        boundsF.left, boundsF.top, boundsF.right, boundsF.bottom,
+                        new int[] {topCrystal, midTint, botCrystal},
+                        new float[] {0f, 0.48f, 1f},
+                        Shader.TileMode.CLAMP));
+
+                sheenPaint.setShader(new LinearGradient(
+                        boundsF.left, boundsF.top, boundsF.left, boundsF.top + boundsF.height() * 0.45f,
+                        0x44FFFFFF, 0x00FFFFFF, Shader.TileMode.CLAMP));
+
+                borderPaint.setStrokeWidth(Math.max(2.4f, borderWidthPx));
+                borderPaint.setShader(new LinearGradient(
+                        boundsF.left, boundsF.top, boundsF.right, boundsF.bottom,
+                        new int[] {0xB8FFFFFF, 0x33FFFFFF, 0x80FFFFFF},
+                        new float[] {0f, 0.5f, 1f},
+                        Shader.TileMode.CLAMP));
+                return;
+            }
+
+            sheenPaint.setShader(null);
+            sheenPaint.setColor(Color.TRANSPARENT);
 
             if (style == NowBarConfig.STYLE_ONEUI_GLOW) {
                 int baseDark = CapsuleColors.withAlpha(0xFF10131C, alpha255);
@@ -1013,7 +1246,7 @@ public final class NowBarOverlayView extends FrameLayout {
                         boundsF.left, boundsF.top, boundsF.right, boundsF.bottom,
                         tintedDark, baseDark, Shader.TileMode.CLAMP));
 
-                borderPaint.setStrokeWidth(isPill ? 3.2f : 2.6f);
+                borderPaint.setStrokeWidth(borderWidthPx > 0 ? borderWidthPx : 0f);
                 borderPaint.setShader(new LinearGradient(
                         boundsF.left, boundsF.top, boundsF.right, boundsF.bottom,
                         new int[] {
@@ -1030,7 +1263,7 @@ public final class NowBarOverlayView extends FrameLayout {
                         boundsF.left, boundsF.top, boundsF.left, boundsF.bottom,
                         topGlass, botGlass, Shader.TileMode.CLAMP));
 
-                borderPaint.setStrokeWidth(2.6f);
+                borderPaint.setStrokeWidth(borderWidthPx > 0 ? borderWidthPx : 0f);
                 borderPaint.setShader(new LinearGradient(
                         boundsF.left, boundsF.top, boundsF.left, boundsF.bottom,
                         0x66FFFFFF, 0x18FFFFFF, Shader.TileMode.CLAMP));
@@ -1041,7 +1274,7 @@ public final class NowBarOverlayView extends FrameLayout {
                         boundsF.left, boundsF.top, boundsF.right, boundsF.bottom,
                         topMono, botMono, Shader.TileMode.CLAMP));
 
-                borderPaint.setStrokeWidth(2.8f);
+                borderPaint.setStrokeWidth(borderWidthPx > 0 ? borderWidthPx : 0f);
                 borderPaint.setShader(new LinearGradient(
                         boundsF.left, boundsF.top, boundsF.right, boundsF.bottom,
                         0x80FFFFFF, 0x22FFFFFF, Shader.TileMode.CLAMP));
@@ -1049,7 +1282,7 @@ public final class NowBarOverlayView extends FrameLayout {
                 fillPaint.setShader(null);
                 fillPaint.setColor(CapsuleColors.withAlpha(0xFF0D0F15, alpha255));
                 borderPaint.setShader(null);
-                borderPaint.setStrokeWidth(2.2f);
+                borderPaint.setStrokeWidth(borderWidthPx > 0 ? borderWidthPx : 0f);
                 borderPaint.setColor(0x2EFFFFFF);
             }
         }
@@ -1057,7 +1290,12 @@ public final class NowBarOverlayView extends FrameLayout {
         @Override
         public void draw(Canvas canvas) {
             canvas.drawRoundRect(boundsF, cornerRadius, cornerRadius, fillPaint);
-            canvas.drawRoundRect(boundsF, cornerRadius, cornerRadius, borderPaint);
+            if (liquidGlass) {
+                canvas.drawRoundRect(boundsF, cornerRadius, cornerRadius, sheenPaint);
+            }
+            if (borderWidthPx > 0f || liquidGlass) {
+                canvas.drawRoundRect(boundsF, cornerRadius, cornerRadius, borderPaint);
+            }
         }
 
         @Override

@@ -50,6 +50,10 @@ public final class StackedNotifDeckView extends FrameLayout {
     private float scrollPos = 0f;
     private int lastReportedIndex = -1;
     private ValueAnimator snapAnimator;
+    private boolean compactMode = false;
+    private boolean liquidGlass = false;
+    private boolean cardSystemBlur = false;
+    private int blurRadiusPx = 80;
 
     private float downX = 0f;
     private float downY = 0f;
@@ -63,6 +67,22 @@ public final class StackedNotifDeckView extends FrameLayout {
         this.touchSlop = ViewConfiguration.get(context).getScaledTouchSlop();
         setClipChildren(false);
         setClipToPadding(false);
+    }
+
+    public void setVisualOptions(boolean compactMode, boolean liquidGlass, boolean cardSystemBlur, int blurRadiusPx) {
+        if (this.compactMode == compactMode
+                && this.liquidGlass == liquidGlass
+                && this.cardSystemBlur == cardSystemBlur
+                && this.blurRadiusPx == blurRadiusPx) {
+            return;
+        }
+        this.compactMode = compactMode;
+        this.liquidGlass = liquidGlass;
+        this.cardSystemBlur = cardSystemBlur;
+        this.blurRadiusPx = blurRadiusPx;
+        rebuildCards();
+        updateDeckHeight();
+        layoutDeck();
     }
 
     public void setItems(List<NotifItem> newItems) {
@@ -101,14 +121,16 @@ public final class StackedNotifDeckView extends FrameLayout {
         int hDp;
         if (n <= 0) {
             hDp = 0;
-        } else if (n == 1) {
-            hDp = 88;
-        } else if (n == 2) {
-            hDp = 136;
-        } else if (n == 3) {
-            hDp = 174;
+        } else if (compactMode) {
+            if (n == 1) hDp = 68;
+            else if (n == 2) hDp = 104;
+            else if (n == 3) hDp = 132;
+            else hDp = 152;
         } else {
-            hDp = 200;
+            if (n == 1) hDp = 88;
+            else if (n == 2) hDp = 136;
+            else if (n == 3) hDp = 174;
+            else hDp = 200;
         }
         ViewGroup.LayoutParams lp = getLayoutParams();
         if (lp != null) {
@@ -124,12 +146,13 @@ public final class StackedNotifDeckView extends FrameLayout {
         cardViews.clear();
         if (items.isEmpty()) return;
 
+        int cardH = compactMode ? dp(64) : dp(82);
         SimpleDateFormat timeFmt = new SimpleDateFormat("HH:mm", Locale.getDefault());
         for (int i = 0; i < items.size(); i++) {
             final int cardIndex = i;
             final NotifItem item = items.get(i);
             View card = createCardView(item, cardIndex, timeFmt);
-            LayoutParams lp = new LayoutParams(LayoutParams.MATCH_PARENT, dp(82));
+            LayoutParams lp = new LayoutParams(LayoutParams.MATCH_PARENT, cardH);
             lp.gravity = Gravity.TOP | Gravity.CENTER_HORIZONTAL;
             addView(card, lp);
             cardViews.add(card);
@@ -140,15 +163,36 @@ public final class StackedNotifDeckView extends FrameLayout {
         LinearLayout row = new LinearLayout(getContext());
         row.setOrientation(LinearLayout.HORIZONTAL);
         row.setGravity(Gravity.CENTER_VERTICAL);
-        row.setPadding(dp(12), dp(10), dp(12), dp(10));
+        int padH = compactMode ? dp(10) : dp(12);
+        int padV = compactMode ? dp(7) : dp(10);
+        int cornerPx = compactMode ? dp(16) : dp(18);
+        row.setPadding(padH, padV, padH, padV);
 
-        GradientDrawable bg = new GradientDrawable(
-                GradientDrawable.Orientation.TOP_BOTTOM,
-                new int[] {0xF0202534, 0xEB151924});
-        bg.setCornerRadius(dp(18));
-        bg.setStroke(dp(1), 0x38FFFFFF);
-        row.setBackground(bg);
-        clipRounded(row, dp(18));
+        GradientDrawable bg;
+        if (liquidGlass) {
+            bg = new GradientDrawable(
+                    GradientDrawable.Orientation.TL_BR,
+                    new int[] {0x7AFFFFFF, 0x3D1E2638, 0x55121622});
+            bg.setStroke(dp(1), 0x8CFFFFFF);
+        } else if (cardSystemBlur) {
+            bg = new GradientDrawable(
+                    GradientDrawable.Orientation.TOP_BOTTOM,
+                    new int[] {0xAD1E2330, 0xA0131620});
+            bg.setStroke(dp(1), 0x45FFFFFF);
+        } else {
+            bg = new GradientDrawable(
+                    GradientDrawable.Orientation.TOP_BOTTOM,
+                    new int[] {0xF0202534, 0xEB151924});
+            bg.setStroke(dp(1), 0x38FFFFFF);
+        }
+        bg.setCornerRadius(cornerPx);
+
+        if (cardSystemBlur) {
+            SystemBlurHelper.applyBackdropBlur(row, bg, true, blurRadiusPx, cornerPx);
+        } else {
+            row.setBackground(bg);
+            clipRounded(row, cornerPx);
+        }
 
         row.setClickable(true);
         row.setOnClickListener(v -> {
@@ -160,16 +204,17 @@ public final class StackedNotifDeckView extends FrameLayout {
             }
         });
 
+        int iconSize = compactMode ? dp(28) : dp(34);
         ImageView iconView = new ImageView(getContext());
         iconView.setScaleType(ImageView.ScaleType.CENTER_CROP);
-        clipRounded(iconView, dp(10));
+        clipRounded(iconView, compactMode ? dp(8) : dp(10));
         if (item.appIcon != null) {
             iconView.setImageDrawable(item.appIcon);
         } else {
             iconView.setImageDrawable(VectorIcons.create(VectorIcons.ICON_BELL, Color.WHITE));
         }
-        LinearLayout.LayoutParams iconLp = new LinearLayout.LayoutParams(dp(34), dp(34));
-        iconLp.rightMargin = dp(10);
+        LinearLayout.LayoutParams iconLp = new LinearLayout.LayoutParams(iconSize, iconSize);
+        iconLp.rightMargin = compactMode ? dp(8) : dp(10);
         row.addView(iconView, iconLp);
 
         LinearLayout textCol = new LinearLayout(getContext());
@@ -182,7 +227,7 @@ public final class StackedNotifDeckView extends FrameLayout {
         TextView titleTv = new TextView(getContext());
         titleTv.setText(item.title);
         titleTv.setTextColor(Color.WHITE);
-        titleTv.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13.5f);
+        titleTv.setTextSize(TypedValue.COMPLEX_UNIT_SP, compactMode ? 12.5f : 13.5f);
         titleTv.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
         titleTv.setSingleLine(true);
         titleTv.setEllipsize(TextUtils.TruncateAt.END);
@@ -190,8 +235,8 @@ public final class StackedNotifDeckView extends FrameLayout {
 
         TextView timeTv = new TextView(getContext());
         timeTv.setText(item.timestampMs > 0 ? timeFmt.format(new Date(item.timestampMs)) : "");
-        timeTv.setTextColor(0x88FFFFFF);
-        timeTv.setTextSize(TypedValue.COMPLEX_UNIT_SP, 10.5f);
+        timeTv.setTextColor(0x99FFFFFF);
+        timeTv.setTextSize(TypedValue.COMPLEX_UNIT_SP, compactMode ? 10f : 10.5f);
         LinearLayout.LayoutParams timeLp = new LinearLayout.LayoutParams(
                 LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT);
         timeLp.leftMargin = dp(6);
@@ -201,22 +246,23 @@ public final class StackedNotifDeckView extends FrameLayout {
         if (!TextUtils.isEmpty(item.text)) {
             TextView bodyTv = new TextView(getContext());
             bodyTv.setText(item.text);
-            bodyTv.setTextColor(0xD4FFFFFF);
-            bodyTv.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12.5f);
-            bodyTv.setMaxLines(2);
+            bodyTv.setTextColor(0xDCFFFFFF);
+            bodyTv.setTextSize(TypedValue.COMPLEX_UNIT_SP, compactMode ? 11.5f : 12.5f);
+            bodyTv.setMaxLines(compactMode ? 1 : 2);
             bodyTv.setEllipsize(TextUtils.TruncateAt.END);
             LinearLayout.LayoutParams bodyLp = new LinearLayout.LayoutParams(
                     LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT);
-            bodyLp.topMargin = dp(2);
+            bodyLp.topMargin = dp(1);
             textCol.addView(bodyTv, bodyLp);
         }
 
         row.addView(textCol, new LinearLayout.LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f));
 
         if (item.clearable) {
+            int cbSize = compactMode ? dp(22) : dp(26);
             ImageView closeBtn = new ImageView(getContext());
             closeBtn.setImageDrawable(VectorIcons.create(VectorIcons.ICON_CLOSE, 0xCCFFFFFF));
-            closeBtn.setPadding(dp(5), dp(5), dp(5), dp(5));
+            closeBtn.setPadding(dp(4), dp(4), dp(4), dp(4));
             GradientDrawable cbBg = new GradientDrawable();
             cbBg.setShape(GradientDrawable.OVAL);
             cbBg.setColor(0x20FFFFFF);
@@ -224,8 +270,8 @@ public final class StackedNotifDeckView extends FrameLayout {
             closeBtn.setOnClickListener(v -> {
                 if (callback != null) callback.onDismissItem(item.key);
             });
-            LinearLayout.LayoutParams cbLp = new LinearLayout.LayoutParams(dp(26), dp(26));
-            cbLp.leftMargin = dp(8);
+            LinearLayout.LayoutParams cbLp = new LinearLayout.LayoutParams(cbSize, cbSize);
+            cbLp.leftMargin = dp(6);
             row.addView(closeBtn, cbLp);
         }
 
@@ -248,15 +294,16 @@ public final class StackedNotifDeckView extends FrameLayout {
             v.setVisibility(VISIBLE);
 
             if (d >= 0f) {
-                // Overlapping physical deck curve underneath the front card:
-                // d=0 -> y=0, d=1 -> y=44dp, d=2 -> y=80dp, d=3 -> y=106dp
+                float step1 = compactMode ? 33f : 44f;
+                float step2 = compactMode ? 27f : 36f;
+                float step3 = compactMode ? 18f : 24f;
                 float yDp;
                 if (d <= 1f) {
-                    yDp = d * 44f;
+                    yDp = d * step1;
                 } else if (d <= 2f) {
-                    yDp = 44f + (d - 1f) * 36f;
+                    yDp = step1 + (d - 1f) * step2;
                 } else {
-                    yDp = 80f + (d - 2f) * 24f;
+                    yDp = step1 + step2 + (d - 2f) * step3;
                 }
 
                 float scale = Math.max(0.82f, 1.0f - d * 0.048f);

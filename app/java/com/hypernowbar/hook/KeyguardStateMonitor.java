@@ -31,6 +31,7 @@ public final class KeyguardStateMonitor {
     public interface Listener {
         void onLockscreenVisibilityChanged(boolean onKeyguard, boolean bouncerShowing, boolean isDozing, boolean screenInteractive);
         void onDeviceUnlocked();
+        void onScreenTurnedOff();
     }
 
     private static volatile KeyguardStateMonitor activeInstance;
@@ -365,6 +366,9 @@ public final class KeyguardStateMonitor {
                     hookedBouncerShowing = false;
                     watchdogRunning = false;
                     mainHandler.removeCallbacks(bouncerWatchdog);
+                    if (listener != null) {
+                        listener.onScreenTurnedOff();
+                    }
                 } else if (Intent.ACTION_SCREEN_ON.equals(act)) {
                     screenOn = true;
                     hookedDozing = false;

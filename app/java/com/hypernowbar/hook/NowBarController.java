@@ -170,8 +170,24 @@ public final class NowBarController {
                             if (ev == null) return;
 
                             if (ctrl.overlayView.isExpanded()) {
-                                boolean handled = ctrl.overlayView.dispatchTouchEvent(ev);
-                                param.setResult(Boolean.valueOf(handled || true));
+                                if (!ctrl.config.betaCompactMode) {
+                                    boolean handled = ctrl.overlayView.dispatchTouchEvent(ev);
+                                    param.setResult(Boolean.valueOf(handled || true));
+                                    return;
+                                }
+                                // In Beta Compact Mode (no outer menu/scrim), isolate ONLY touches inside floating cards!
+                                int act = ev.getActionMasked();
+                                if (act == MotionEvent.ACTION_DOWN) {
+                                    ctrl.forwardingPillTouch = ctrl.overlayView.isTouchInsideExpandedContent(
+                                            ev.getRawX(), ev.getRawY());
+                                }
+                                if (ctrl.forwardingPillTouch) {
+                                    boolean handled = ctrl.overlayView.dispatchTouchEvent(ev);
+                                    if (act == MotionEvent.ACTION_UP || act == MotionEvent.ACTION_CANCEL) {
+                                        ctrl.forwardingPillTouch = false;
+                                    }
+                                    param.setResult(Boolean.valueOf(handled || true));
+                                }
                                 return;
                             }
 
@@ -280,6 +296,7 @@ public final class NowBarController {
 
         this.notifTracker = new NotifTracker(context, items -> overlayView.setNotifications(items));
         this.notifTracker.setHideSeenAfterUnlock(config.clearNotifsAfterUnlock);
+        this.notifTracker.setNotifSourceMode(config.notifSourceMode);
         this.notifTracker.refreshFromService();
 
         this.keyguardMonitor = new KeyguardStateMonitor(context, new KeyguardStateMonitor.Listener() {
@@ -297,6 +314,14 @@ public final class NowBarController {
                 if (notifTracker != null) {
                     notifTracker.onDeviceUnlocked();
                 }
+            }
+
+            @Override
+            public void onScreenTurnedOff() {
+                if (notifTracker != null) {
+                    notifTracker.onScreenTurnedOff();
+                }
+                overlayView.onScreenTurnedOff();
             }
         });
 
@@ -520,6 +545,7 @@ public final class NowBarController {
                     mainHandler.post(() -> {
                         if (notifTracker != null) {
                             notifTracker.setHideSeenAfterUnlock(config.clearNotifsAfterUnlock);
+                            notifTracker.setNotifSourceMode(config.notifSourceMode);
                         }
                         StockNotifHider.setAlwaysKeepClockStretched(config.enabled && config.hideStockNotifications);
                         overlayView.setConfig(config);

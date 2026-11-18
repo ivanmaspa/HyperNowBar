@@ -80,17 +80,17 @@ try {
         if ($LASTEXITCODE -ne 0) { throw "keytool failed" }
     }
 
-    & $Apksigner sign --v2-signing-enabled true --v3-signing-enabled true --ks "hypernowbar.jks" --ks-key-alias hypernowbar --ks-pass pass:hypernowbar123 --key-pass pass:hypernowbar123 --out "dist\HyperNowBar-v2.5-beta.apk" "build\aligned.apk"
+    & $Apksigner sign --v2-signing-enabled true --v3-signing-enabled true --ks "hypernowbar.jks" --ks-key-alias hypernowbar --ks-pass pass:hypernowbar123 --key-pass pass:hypernowbar123 --out "dist\HyperNowBar-1.G.1.apk" "build\aligned.apk"
     if ($LASTEXITCODE -ne 0) { throw "apksigner sign failed" }
 
-    & $Apksigner verify --verbose "dist\HyperNowBar-v2.5-beta.apk"
+    & $Apksigner verify --verbose "dist\HyperNowBar-1.G.1.apk"
     if ($LASTEXITCODE -ne 0) { throw "apksigner verify failed" }
 
     Write-Host "[7/7] Copying signed standalone Vector APK to Desktop..."
     $DesktopDir = [Environment]::GetFolderPath("Desktop")
-    Get-ChildItem $DesktopDir -Filter "HyperNowBar-v*.apk" -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue
-    $DesktopApk = Join-Path $DesktopDir "HyperNowBar-v2.5-beta.apk"
-    Copy-Item "dist\HyperNowBar-v2.5-beta.apk" $DesktopApk -Force
+    Get-ChildItem $DesktopDir -Filter "HyperNowBar-*.apk" -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue
+    $DesktopApk = Join-Path $DesktopDir "HyperNowBar-1.G.1.apk"
+    Copy-Item "dist\HyperNowBar-1.G.1.apk" $DesktopApk -Force
 
     $sizeKb = [math]::Round((Get-Item $DesktopApk).Length / 1KB, 1)
     Write-Host ""

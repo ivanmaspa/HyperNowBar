@@ -1,6 +1,7 @@
 package com.hypernowbar.app;
 
 import android.app.Activity;
+import android.app.AlertDialog;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
@@ -16,11 +17,14 @@ import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.os.Build;
 import android.os.Bundle;
+import android.text.InputType;
 import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.EditText;
 import android.widget.FrameLayout;
+import android.widget.HorizontalScrollView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.SeekBar;
@@ -28,6 +32,7 @@ import android.widget.Switch;
 import android.widget.TextView;
 import android.widget.Toast;
 import com.hypernowbar.config.NowBarConfig;
+import com.hypernowbar.config.NowBarPresets;
 import com.hypernowbar.hook.NowBarController;
 import com.hypernowbar.model.MediaState;
 import com.hypernowbar.model.NotifItem;
@@ -38,7 +43,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Pro Configuration & Interactive Live Preview UI for HyperNowBar v2.0.
+ * Configuration, Presets & Interactive Live Preview UI for HyperNowBar 1.G.1.
  */
 public final class MainActivity extends Activity {
 
@@ -47,10 +52,18 @@ public final class MainActivity extends Activity {
     private NowBarOverlayView previewBar;
     private MediaState mockMedia;
     private List<NotifItem> mockNotifs;
-    private TextView[] styleChips;
-    private TextView[] widthChips;
+
+    private LinearLayout controlsContainer;
+    private LinearLayout presetsRow;
+    private TextView previewHintTv;
     private TextView liveDiagTv;
     private BroadcastReceiver pongReceiver;
+
+    private TextView[] styleChips;
+    private TextView[] widthChips;
+    private TextView[] notifSourceChips;
+    private TextView[] animStyleChips;
+    private View[] accentSwatches;
 
     public static boolean isModuleActive() {
         return false;
@@ -71,7 +84,7 @@ public final class MainActivity extends Activity {
         root.setOrientation(LinearLayout.VERTICAL);
         final int baseH = dp(18);
         final int baseTop = dp(20);
-        final int baseBot = dp(36);
+        final int baseBot = dp(38);
         root.setPadding(baseH, baseTop, baseH, baseBot);
         root.setOnApplyWindowInsetsListener((v, insets) -> {
             android.graphics.Insets sys = insets.getInsets(android.view.WindowInsets.Type.systemBars());
@@ -79,7 +92,7 @@ public final class MainActivity extends Activity {
             return insets;
         });
 
-        // 1. Header + Status badge
+        // 1. Header + Status Badge
         LinearLayout headerRow = new LinearLayout(this);
         headerRow.setOrientation(LinearLayout.HORIZONTAL);
         headerRow.setGravity(Gravity.CENTER_VERTICAL);
@@ -87,24 +100,23 @@ public final class MainActivity extends Activity {
         LinearLayout titleCol = new LinearLayout(this);
         titleCol.setOrientation(LinearLayout.VERTICAL);
         TextView titleTv = new TextView(this);
-        titleTv.setText("HyperNowBar 2.5 Beta");
+        titleTv.setText("HyperNowBar 1.G.1");
         titleTv.setTextColor(Color.WHITE);
         titleTv.setTextSize(TypedValue.COMPLEX_UNIT_SP, 23f);
         titleTv.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
         titleCol.addView(titleTv);
 
         TextView subTv = new TextView(this);
-        subTv.setText("Now Bar & Live Capsule • HyperOS 3");
+        subTv.setText("Now Bar & Fluid Glass • HyperOS 3");
         subTv.setTextColor(0x99FFFFFF);
         subTv.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12.5f);
         titleCol.addView(subTv);
-
         headerRow.addView(titleCol, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
 
         boolean active = isModuleActive();
         TextView statusBadge = new TextView(this);
-        statusBadge.setText(active ? "Активен" : "SystemUI");
-        statusBadge.setTextColor(active ? 0xFF071B13 : 0xFF221504);
+        statusBadge.setText(active ? "Релиз 1.G.1" : "SystemUI");
+        statusBadge.setTextColor(active ? 0xFF071B13 : 0xFF101828);
         statusBadge.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11.5f);
         statusBadge.setTypeface(Typeface.DEFAULT_BOLD);
         statusBadge.setPadding(dp(10), dp(5), dp(10), dp(5));
@@ -134,207 +146,43 @@ public final class MainActivity extends Activity {
         // 2. Interactive Live Preview Stage
         FrameLayout previewStage = buildPreviewStage();
         LinearLayout.LayoutParams psLp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, dp(420));
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(428));
         psLp.topMargin = dp(14);
         root.addView(previewStage, psLp);
 
-        // 3. Visual Style Selector (4 styles including Monochrome B&W!)
-        root.addView(sectionHeader("Стиль оформления"));
-        LinearLayout styleRow = new LinearLayout(this);
-        styleRow.setOrientation(LinearLayout.HORIZONTAL);
-        String[] styleNames = {"One UI 7", "ColorOS", "Matte", "Ч/Б Моно"};
-        styleChips = new TextView[4];
-        for (int i = 0; i < 4; i++) {
-            final int styleIdx = i;
-            TextView chip = new TextView(this);
-            chip.setText(styleNames[i]);
-            chip.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11.5f);
-            chip.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
-            chip.setGravity(Gravity.CENTER);
-            chip.setPadding(dp(6), dp(11), dp(6), dp(11));
-            chip.setOnClickListener(v -> {
-                config.style = styleIdx;
-                updateStyleChips();
-                persistAndBroadcast();
-            });
-            LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
-            if (i > 0) clp.leftMargin = dp(6);
-            styleRow.addView(chip, clp);
-            styleChips[i] = chip;
-        }
-        updateStyleChips();
-        root.addView(styleRow);
+        // 3. Presets Strip (Built-in + Custom User Presets)
+        LinearLayout presetsHeader = new LinearLayout(this);
+        presetsHeader.setOrientation(LinearLayout.HORIZONTAL);
+        presetsHeader.setGravity(Gravity.CENTER_VERTICAL);
+        LinearLayout.LayoutParams phLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        phLp.topMargin = dp(18);
+        phLp.bottomMargin = dp(8);
 
-        // 4. Pill Width Mode
-        root.addView(sectionHeader("Ширина капсулы"));
-        LinearLayout widthRow = new LinearLayout(this);
-        widthRow.setOrientation(LinearLayout.HORIZONTAL);
-        String[] widthNames = {"Компактная", "Стандарт", "Широкая"};
-        widthChips = new TextView[3];
-        for (int i = 0; i < 3; i++) {
-            final int wIdx = i;
-            TextView chip = new TextView(this);
-            chip.setText(widthNames[i]);
-            chip.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f);
-            chip.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
-            chip.setGravity(Gravity.CENTER);
-            chip.setPadding(dp(8), dp(10), dp(8), dp(10));
-            chip.setOnClickListener(v -> {
-                config.capsuleWidthMode = wIdx;
-                updateWidthChips();
-                persistAndBroadcast();
-            });
-            LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
-            if (i > 0) clp.leftMargin = dp(8);
-            widthRow.addView(chip, clp);
-            widthChips[i] = chip;
-        }
-        updateWidthChips();
-        root.addView(widthRow);
+        TextView phTitle = new TextView(this);
+        phTitle.setText("Пресеты оформления (удерживайте свой для удаления)");
+        phTitle.setTextColor(0xB3FFFFFF);
+        phTitle.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f);
+        phTitle.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
+        presetsHeader.addView(phTitle, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        root.addView(presetsHeader, phLp);
 
-        // 5. Positioning, Geometry & Glass Sliders Card
-        root.addView(sectionHeader("Позиция, размеры и стекло"));
-        LinearLayout slidersCard = createCard();
+        HorizontalScrollView presetsScroll = new HorizontalScrollView(this);
+        presetsScroll.setHorizontalScrollBarEnabled(false);
+        presetsRow = new LinearLayout(this);
+        presetsRow.setOrientation(LinearLayout.HORIZONTAL);
+        presetsRow.setGravity(Gravity.CENTER_VERTICAL);
+        presetsScroll.addView(presetsRow);
+        root.addView(presetsScroll);
+        rebuildPresetsRow();
 
-        addSliderRow(slidersCard,
-                "Высота капсулы от низа (над сканером: 145–165 dp)",
-                16, 340, config.bottomMarginDp, " dp",
-                val -> { config.bottomMarginDp = val; persistAndBroadcast(); });
-        addDivider(slidersCard);
+        // 4. Dynamic Settings Controls Container (rebuilt cleanly on preset apply)
+        controlsContainer = new LinearLayout(this);
+        controlsContainer.setOrientation(LinearLayout.VERTICAL);
+        root.addView(controlsContainer);
+        rebuildControls();
 
-        addSliderRow(slidersCard,
-                "Высота открытого меню от низа (не задевает сканер)",
-                80, 360, config.sheetBottomMarginDp, " dp",
-                val -> { config.sheetBottomMarginDp = val; persistAndBroadcast(); });
-        addDivider(slidersCard);
-
-        addSliderRow(slidersCard,
-                "Сила системного блюра (HyperOS GPU Blur)",
-                20, 160, config.blurRadiusPx, " px",
-                val -> { config.blurRadiusPx = val; persistAndBroadcast(); });
-        addDivider(slidersCard);
-
-        addSliderRow(slidersCard,
-                "Скругление углов капсулы",
-                10, 28, config.cornerRadiusDp, " dp",
-                val -> { config.cornerRadiusDp = val; persistAndBroadcast(); });
-        addDivider(slidersCard);
-
-        addSliderRow(slidersCard,
-                "Плотность матового стекла",
-                45, 100, config.capsuleAlpha, "%",
-                val -> { config.capsuleAlpha = val; persistAndBroadcast(); });
-        addDivider(slidersCard);
-
-        addSliderRow(slidersCard,
-                "Затемнение фона при раскрытии меню",
-                0, 90, config.scrimAlpha, "%",
-                val -> { config.scrimAlpha = val; persistAndBroadcast(); });
-
-        root.addView(slidersCard);
-
-        // 6. Controls & Navigation Card
-        root.addView(sectionHeader("Управление и переходы"));
-        LinearLayout actionsCard = createCard();
-
-        addSwitchRow(actionsCard,
-                "Убирать сообщения после разблокировки",
-                "После разблокировки старые уведомления исчезают из капсулы до прихода новых",
-                config.clearNotifsAfterUnlock,
-                checked -> { config.clearNotifsAfterUnlock = checked; persistAndBroadcast(); });
-        addDivider(actionsCard);
-
-        addSwitchRow(actionsCard,
-                "Системный блюр (как в шторке HyperOS)",
-                "Аппаратное GPU-размытие фона за капсулой и раскрытым меню",
-                config.systemBlurEnabled,
-                checked -> { config.systemBlurEnabled = checked; persistAndBroadcast(); });
-        addDivider(actionsCard);
-
-        addSwitchRow(actionsCard,
-                "Быстрые кнопки в свёрнутой капсуле",
-                "Пауза/старт и следующий трек прямо на капсуле в 1 тап",
-                config.showQuickMediaButtons,
-                checked -> { config.showQuickMediaButtons = checked; persistAndBroadcast(); });
-        addDivider(actionsCard);
-
-        addSwitchRow(actionsCard,
-                "Переход в плеер по нажатию",
-                "Тап по обложке/названию трека открывает музыкальное приложение",
-                config.tapMediaOpensApp,
-                checked -> { config.tapMediaOpensApp = checked; persistAndBroadcast(); });
-        addDivider(actionsCard);
-
-        addSwitchRow(actionsCard,
-                "Переход в чат по нажатию на уведомление",
-                "Тап по сообщению разблокирует экран и открывает приложение",
-                config.tapNotifOpensApp,
-                checked -> { config.tapNotifOpensApp = checked; persistAndBroadcast(); });
-        addDivider(actionsCard);
-
-        addSwitchRow(actionsCard,
-                "Скрывать при вводе пароля (PIN)",
-                "Мгновенно убирать капсулу, когда открывается экран ввода кода",
-                config.hideOnBouncer,
-                checked -> { config.hideOnBouncer = checked; persistAndBroadcast(); });
-
-        root.addView(actionsCard);
-
-        // 7. Lockscreen Behavior Card
-        root.addView(sectionHeader("Экран блокировки и внешний вид"));
-        LinearLayout togglesCard = createCard();
-
-        addSwitchRow(togglesCard,
-                "Включить HyperNowBar",
-                "Отображать нижнюю капсулу на экране блокировки",
-                config.enabled,
-                checked -> { config.enabled = checked; persistAndBroadcast(); });
-        addDivider(togglesCard);
-
-        addSwitchRow(togglesCard,
-                "Чистый экран блокировки",
-                "Скрывать стандартные карточки уведомлений и стоковый плеер",
-                config.hideStockNotifications,
-                checked -> { config.hideStockNotifications = checked; persistAndBroadcast(); });
-        addDivider(togglesCard);
-
-        addSwitchRow(togglesCard,
-                "Подсветка в цвет обложки",
-                "Адаптивное свечение контура под цвет альбома (кроме Ч/Б Моно)",
-                config.dynamicGlowColor,
-                checked -> { config.dynamicGlowColor = checked; persistAndBroadcast(); });
-        addDivider(togglesCard);
-
-        addSwitchRow(togglesCard,
-                "Анимация эквалайзера",
-                "Живая звуковая волна во время проигрывания",
-                config.showEqualizer,
-                checked -> { config.showEqualizer = checked; persistAndBroadcast(); });
-        addDivider(togglesCard);
-
-        addSwitchRow(togglesCard,
-                "Показывать плеер на паузе",
-                "Оставлять трек в капсуле для быстрого возобновления",
-                config.showMediaWhenPaused,
-                checked -> { config.showMediaWhenPaused = checked; persistAndBroadcast(); });
-        addDivider(togglesCard);
-
-        addSwitchRow(togglesCard,
-                "Скрывать на Always-On Display",
-                "Автоматически прятать на AOD (защита OLED)",
-                config.hideOnAod,
-                checked -> { config.hideOnAod = checked; persistAndBroadcast(); });
-        addDivider(togglesCard);
-
-        addSwitchRow(togglesCard,
-                "Показывать пустую капсулу",
-                "Отображать мини-капсулу даже без музыки и уведомлений",
-                config.alwaysShowCapsule,
-                checked -> { config.alwaysShowCapsule = checked; persistAndBroadcast(); });
-
-        root.addView(togglesCard);
-
-        // 8. Restart SystemUI Button
+        // 5. Restart SystemUI Button
         TextView restartBtn = new TextView(this);
         restartBtn.setText("Перезапустить SystemUI");
         restartBtn.setTextColor(Color.WHITE);
@@ -356,6 +204,448 @@ public final class MainActivity extends Activity {
         scroll.addView(root);
         setContentView(scroll);
         registerPongReceiver();
+    }
+
+    private void rebuildPresetsRow() {
+        presetsRow.removeAllViews();
+
+        // "+ Создать" button
+        TextView addBtn = new TextView(this);
+        addBtn.setText("+ Создать");
+        addBtn.setTextColor(0xFF0A141E);
+        addBtn.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f);
+        addBtn.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
+        addBtn.setPadding(dp(13), dp(9), dp(13), dp(9));
+        GradientDrawable addBg = new GradientDrawable();
+        addBg.setColor(0xFF4AE3B5);
+        addBg.setCornerRadius(dp(16));
+        addBtn.setBackground(addBg);
+        addBtn.setOnClickListener(v -> showCreatePresetDialog());
+        LinearLayout.LayoutParams addLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        addLp.rightMargin = dp(8);
+        presetsRow.addView(addBtn, addLp);
+
+        List<NowBarPresets.PresetItem> all = new ArrayList<>();
+        all.addAll(NowBarPresets.loadUserPresets(prefs));
+        all.addAll(NowBarPresets.getBuiltInPresets());
+
+        for (NowBarPresets.PresetItem item : all) {
+            TextView chip = new TextView(this);
+            chip.setText(item.isCustom ? ("★ " + item.name) : item.name);
+            chip.setTextColor(Color.WHITE);
+            chip.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f);
+            chip.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
+            chip.setPadding(dp(13), dp(9), dp(13), dp(9));
+            GradientDrawable bg = new GradientDrawable();
+            bg.setColor(item.isCustom ? 0xFF222B4A : 0xFF171C2B);
+            bg.setCornerRadius(dp(16));
+            bg.setStroke(dp(1), item.isCustom ? 0xFF7B9AFF : 0x2BFFFFFF);
+            chip.setBackground(bg);
+
+            chip.setOnClickListener(v -> {
+                config.applySerializedPreset(item.serializedData);
+                rebuildControls();
+                persistAndBroadcast();
+                Toast.makeText(this, "Применён пресет: " + item.name, Toast.LENGTH_SHORT).show();
+            });
+
+            if (item.isCustom) {
+                chip.setOnLongClickListener(v -> {
+                    new AlertDialog.Builder(this)
+                            .setTitle("Удалить пресет?")
+                            .setMessage("Удалить сохранённый пресет «" + item.name + "»?")
+                            .setPositiveButton("Удалить", (d, w) -> {
+                                NowBarPresets.deleteUserPreset(prefs, item.name);
+                                rebuildPresetsRow();
+                                Toast.makeText(this, "Пресет удалён", Toast.LENGTH_SHORT).show();
+                            })
+                            .setNegativeButton("Отмена", null)
+                            .show();
+                    return true;
+                });
+            }
+
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            lp.rightMargin = dp(8);
+            presetsRow.addView(chip, lp);
+        }
+    }
+
+    private void showCreatePresetDialog() {
+        EditText input = new EditText(this);
+        input.setHint("Например: Ночной неон");
+        input.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
+        int pad = dp(18);
+        input.setPadding(pad, pad, pad, pad);
+
+        new AlertDialog.Builder(this)
+                .setTitle("Создать свой пресет")
+                .setMessage("Сохранятся текущие цвета, стекло, блюр, анимации, размеры и режим отображения.")
+                .setView(input)
+                .setPositiveButton("Сохранить", (d, w) -> {
+                    String name = input.getText().toString().trim();
+                    if (name.isEmpty()) {
+                        Toast.makeText(this, "Введите название пресета", Toast.LENGTH_SHORT).show();
+                        return;
+                    }
+                    NowBarPresets.saveUserPreset(prefs, name, config);
+                    rebuildPresetsRow();
+                    Toast.makeText(this, "Пресет «" + name + "» сохранён", Toast.LENGTH_SHORT).show();
+                })
+                .setNegativeButton("Отмена", null)
+                .show();
+    }
+
+    private void rebuildControls() {
+        controlsContainer.removeAllViews();
+        updatePreviewHint();
+
+        // === BETA COMPACT ADAPTIVE MODE ===
+        controlsContainer.addView(sectionHeader("Экспериментальный режим"));
+        LinearLayout betaCard = createAccentCard(0xFF191D33, 0x667A6BFF);
+        addSwitchRow(betaCard,
+                "Компактный адаптивный режим (Бета)",
+                "Меньше плеер, компактнее стопка, без внешней рамки меню и затемнения. Сворачивается в бар при выключении и включении экрана",
+                config.betaCompactMode,
+                checked -> {
+                    config.betaCompactMode = checked;
+                    updatePreviewHint();
+                    persistAndBroadcast();
+                });
+        controlsContainer.addView(betaCard);
+
+        // === NOTIFICATIONS SOURCE & LIFECYCLE ===
+        controlsContainer.addView(sectionHeader("Источник и очистка уведомлений"));
+        LinearLayout notifCard = createCard();
+
+        TextView srcLbl = new TextView(this);
+        srcLbl.setText("Какие уведомления показывать");
+        srcLbl.setTextColor(Color.WHITE);
+        srcLbl.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13.5f);
+        srcLbl.setPadding(dp(2), dp(6), dp(2), dp(8));
+        notifCard.addView(srcLbl);
+
+        LinearLayout srcRow = new LinearLayout(this);
+        srcRow.setOrientation(LinearLayout.HORIZONTAL);
+        String[] srcNames = {"Все из шторки", "После выкл. экрана"};
+        notifSourceChips = new TextView[2];
+        for (int i = 0; i < 2; i++) {
+            final int idx = i;
+            TextView chip = makeChoiceChip(srcNames[i], 12f);
+            chip.setOnClickListener(v -> {
+                config.notifSourceMode = idx;
+                updateNotifSourceChips();
+                persistAndBroadcast();
+            });
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+            if (i > 0) lp.leftMargin = dp(8);
+            srcRow.addView(chip, lp);
+            notifSourceChips[i] = chip;
+        }
+        updateNotifSourceChips();
+        notifCard.addView(srcRow);
+
+        TextView srcHint = new TextView(this);
+        srcHint.setText("«Все из шторки» копирует текущие уведомления; «После выкл. экрана» показывает только новые, пришедшие после блокировки.");
+        srcHint.setTextColor(0x80FFFFFF);
+        srcHint.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11.5f);
+        srcHint.setPadding(dp(2), dp(6), dp(2), dp(6));
+        notifCard.addView(srcHint);
+
+        addDivider(notifCard);
+        addSwitchRow(notifCard,
+                "Очищать уведомления после разблокировки",
+                "Вкл: пропадают из бара после разблокировки • Выкл: остаются без очистки",
+                config.clearNotifsAfterUnlock,
+                checked -> { config.clearNotifsAfterUnlock = checked; persistAndBroadcast(); });
+        controlsContainer.addView(notifCard);
+
+        // === VISUAL STYLE & iOS LIQUID GLASS ===
+        controlsContainer.addView(sectionHeader("Стиль, стекло и акцентный цвет"));
+        LinearLayout styleRow = new LinearLayout(this);
+        styleRow.setOrientation(LinearLayout.HORIZONTAL);
+        String[] styleNames = {"One UI 7", "ColorOS", "Matte", "Ч/Б Моно"};
+        styleChips = new TextView[4];
+        for (int i = 0; i < 4; i++) {
+            final int styleIdx = i;
+            TextView chip = makeChoiceChip(styleNames[i], 11.5f);
+            chip.setOnClickListener(v -> {
+                config.style = styleIdx;
+                updateStyleChips();
+                persistAndBroadcast();
+            });
+            LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+            if (i > 0) clp.leftMargin = dp(6);
+            styleRow.addView(chip, clp);
+            styleChips[i] = chip;
+        }
+        updateStyleChips();
+        controlsContainer.addView(styleRow);
+
+        LinearLayout glassCard = createCard();
+        LinearLayout.LayoutParams gcLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        gcLp.topMargin = dp(10);
+
+        addSwitchRow(glassCard,
+                "Режим жидкого стекла iOS (Liquid Glass)",
+                "По умолчанию выключен. Полупрозрачные бликующие линзы, ледяной кант и глубина как в iOS",
+                config.iosLiquidGlass,
+                checked -> { config.iosLiquidGlass = checked; persistAndBroadcast(); });
+        addDivider(glassCard);
+
+        addSwitchRow(glassCard,
+                "Подсветка в цвет обложки трека",
+                "Автоматически подбирать цвет контура по обложке альбома",
+                config.dynamicGlowColor,
+                checked -> { config.dynamicGlowColor = checked; persistAndBroadcast(); });
+        addDivider(glassCard);
+
+        TextView accentLbl = new TextView(this);
+        accentLbl.setText("Ручной акцентный цвет (когда обложки нет или автоцвет выкл.)");
+        accentLbl.setTextColor(0xCCFFFFFF);
+        accentLbl.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12.5f);
+        accentLbl.setPadding(dp(2), dp(6), dp(2), dp(8));
+        glassCard.addView(accentLbl);
+
+        LinearLayout swatchRow = new LinearLayout(this);
+        swatchRow.setOrientation(LinearLayout.HORIZONTAL);
+        swatchRow.setGravity(Gravity.CENTER_VERTICAL);
+        swatchRow.setPadding(dp(2), dp(2), dp(2), dp(6));
+        accentSwatches = new View[NowBarConfig.ACCENT_SWATCHES.length];
+        for (int i = 0; i < NowBarConfig.ACCENT_SWATCHES.length; i++) {
+            final int col = NowBarConfig.ACCENT_SWATCHES[i];
+            View dot = new View(this);
+            dot.setOnClickListener(v -> {
+                config.manualAccentColor = col;
+                updateAccentSwatches();
+                persistAndBroadcast();
+            });
+            LinearLayout.LayoutParams dlp = new LinearLayout.LayoutParams(dp(30), dp(30));
+            if (i > 0) dlp.leftMargin = dp(8);
+            swatchRow.addView(dot, dlp);
+            accentSwatches[i] = dot;
+        }
+        updateAccentSwatches();
+        glassCard.addView(swatchRow);
+        controlsContainer.addView(glassCard, gcLp);
+
+        // === ANIMATIONS ===
+        controlsContainer.addView(sectionHeader("Анимации"));
+        LinearLayout animCard = createCard();
+
+        LinearLayout animRow = new LinearLayout(this);
+        animRow.setOrientation(LinearLayout.HORIZONTAL);
+        animRow.setPadding(0, dp(4), 0, dp(4));
+        String[] animNames = {"Пружина iOS", "HyperOS", "Выезд", "Мгновенно"};
+        animStyleChips = new TextView[4];
+        for (int i = 0; i < 4; i++) {
+            final int idx = i;
+            TextView chip = makeChoiceChip(animNames[i], 11f);
+            chip.setOnClickListener(v -> {
+                config.animStyle = idx;
+                updateAnimStyleChips();
+                persistAndBroadcast();
+            });
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+            if (i > 0) lp.leftMargin = dp(6);
+            animRow.addView(chip, lp);
+            animStyleChips[i] = chip;
+        }
+        updateAnimStyleChips();
+        animCard.addView(animRow);
+        addDivider(animCard);
+
+        addSliderRow(animCard,
+                "Скорость анимаций (меньше = быстрее)",
+                50, 180, config.animSpeedPct, "%",
+                val -> { config.animSpeedPct = val; persistAndBroadcast(); });
+        controlsContainer.addView(animCard);
+
+        // === BLUR & BACKDROP ===
+        controlsContainer.addView(sectionHeader("Блюр и размытие фона"));
+        LinearLayout blurCard = createCard();
+
+        addSwitchRow(blurCard,
+                "Системный GPU-блюр капсулы и карточек",
+                "Аппаратное размытие HyperOS MiBackgroundBlur",
+                config.systemBlurEnabled,
+                checked -> { config.systemBlurEnabled = checked; persistAndBroadcast(); });
+        addDivider(blurCard);
+
+        addSliderRow(blurCard,
+                "Сила блюра капсулы и меню",
+                20, 160, config.blurRadiusPx, " px",
+                val -> { config.blurRadiusPx = val; persistAndBroadcast(); });
+        addDivider(blurCard);
+
+        addSwitchRow(blurCard,
+                "Красивый задний блюр при открытом меню",
+                "Мягкое полноэкранное размытие обоев и часов за раскрытым меню уведомлений",
+                config.backdropBlurEnabled,
+                checked -> { config.backdropBlurEnabled = checked; persistAndBroadcast(); });
+        addDivider(blurCard);
+
+        addSliderRow(blurCard,
+                "Сила заднего блюра фона",
+                0, 160, config.backdropBlurRadiusPx, " px",
+                val -> { config.backdropBlurRadiusPx = val; persistAndBroadcast(); });
+        addDivider(blurCard);
+
+        addSliderRow(blurCard,
+                "Затемнение фона при раскрытии меню",
+                0, 90, config.scrimAlpha, "%",
+                val -> { config.scrimAlpha = val; persistAndBroadcast(); });
+        addDivider(blurCard);
+
+        addSliderRow(blurCard,
+                "Плотность стекла капсулы",
+                35, 100, config.capsuleAlpha, "%",
+                val -> { config.capsuleAlpha = val; persistAndBroadcast(); });
+        controlsContainer.addView(blurCard);
+
+        // === GEOMETRY & DIMENSIONS ===
+        controlsContainer.addView(sectionHeader("Позиция и геометрия"));
+        LinearLayout widthRow = new LinearLayout(this);
+        widthRow.setOrientation(LinearLayout.HORIZONTAL);
+        String[] widthNames = {"Компактная", "Стандарт", "Широкая"};
+        widthChips = new TextView[3];
+        for (int i = 0; i < 3; i++) {
+            final int wIdx = i;
+            TextView chip = makeChoiceChip(widthNames[i], 12f);
+            chip.setOnClickListener(v -> {
+                config.capsuleWidthMode = wIdx;
+                updateWidthChips();
+                persistAndBroadcast();
+            });
+            LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+            if (i > 0) clp.leftMargin = dp(8);
+            widthRow.addView(chip, clp);
+            widthChips[i] = chip;
+        }
+        updateWidthChips();
+        controlsContainer.addView(widthRow);
+
+        LinearLayout geomCard = createCard();
+        LinearLayout.LayoutParams gLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        gLp.topMargin = dp(10);
+
+        addSliderRow(geomCard,
+                "Высота капсулы от низа (над сканером: 145–165 dp)",
+                16, 340, config.bottomMarginDp, " dp",
+                val -> { config.bottomMarginDp = val; persistAndBroadcast(); });
+        addDivider(geomCard);
+
+        addSliderRow(geomCard,
+                "Высота открытого меню от низа",
+                80, 360, config.sheetBottomMarginDp, " dp",
+                val -> { config.sheetBottomMarginDp = val; persistAndBroadcast(); });
+        addDivider(geomCard);
+
+        addSliderRow(geomCard,
+                "Скругление углов капсулы",
+                10, 28, config.cornerRadiusDp, " dp",
+                val -> { config.cornerRadiusDp = val; persistAndBroadcast(); });
+        addDivider(geomCard);
+
+        addSliderRow(geomCard,
+                "Толщина светящегося контура",
+                0, 4, config.borderWidthDp, " dp",
+                val -> { config.borderWidthDp = val; persistAndBroadcast(); });
+        addDivider(geomCard);
+
+        addSliderRow(geomCard,
+                "Размер шрифта капсулы",
+                11, 15, config.pillFontSizeSp, " sp",
+                val -> { config.pillFontSizeSp = val; persistAndBroadcast(); });
+        controlsContainer.addView(geomCard, gLp);
+
+        // === CONTROLS & BEHAVIOR ===
+        controlsContainer.addView(sectionHeader("Управление и поведение"));
+        LinearLayout actionsCard = createCard();
+
+        addSwitchRow(actionsCard,
+                "Включить HyperNowBar",
+                "Отображать нижнюю капсулу на экране блокировки",
+                config.enabled,
+                checked -> { config.enabled = checked; persistAndBroadcast(); });
+        addDivider(actionsCard);
+
+        addSwitchRow(actionsCard,
+                "Чистый экран блокировки",
+                "Скрывать стандартные уведомления и удерживать часы HyperOS растянутыми",
+                config.hideStockNotifications,
+                checked -> { config.hideStockNotifications = checked; persistAndBroadcast(); });
+        addDivider(actionsCard);
+
+        addSwitchRow(actionsCard,
+                "Быстрые кнопки на свёрнутой капсуле",
+                "Пауза/старт и следующий трек в 1 тап прямо на капсуле",
+                config.showQuickMediaButtons,
+                checked -> { config.showQuickMediaButtons = checked; persistAndBroadcast(); });
+        addDivider(actionsCard);
+
+        addSwitchRow(actionsCard,
+                "Переход в плеер по нажатию",
+                "Тап по обложке/названию трека открывает музыкальное приложение",
+                config.tapMediaOpensApp,
+                checked -> { config.tapMediaOpensApp = checked; persistAndBroadcast(); });
+        addDivider(actionsCard);
+
+        addSwitchRow(actionsCard,
+                "Переход в чат по нажатию на уведомление",
+                "Тап по передней карточке разблокирует экран и открывает приложение",
+                config.tapNotifOpensApp,
+                checked -> { config.tapNotifOpensApp = checked; persistAndBroadcast(); });
+        addDivider(actionsCard);
+
+        addSwitchRow(actionsCard,
+                "Скрывать при вводе пароля (PIN)",
+                "Мгновенно прятать капсулу на экране ввода кода и возвращать при отмене",
+                config.hideOnBouncer,
+                checked -> { config.hideOnBouncer = checked; persistAndBroadcast(); });
+        addDivider(actionsCard);
+
+        addSwitchRow(actionsCard,
+                "Анимация эквалайзера",
+                "Живая звуковая волна во время проигрывания музыки",
+                config.showEqualizer,
+                checked -> { config.showEqualizer = checked; persistAndBroadcast(); });
+        addDivider(actionsCard);
+
+        addSwitchRow(actionsCard,
+                "Показывать плеер на паузе",
+                "Оставлять трек в капсуле для быстрого возобновления",
+                config.showMediaWhenPaused,
+                checked -> { config.showMediaWhenPaused = checked; persistAndBroadcast(); });
+        addDivider(actionsCard);
+
+        addSwitchRow(actionsCard,
+                "Скрывать на Always-On Display",
+                "Автоматически прятать на AOD (защита OLED)",
+                config.hideOnAod,
+                checked -> { config.hideOnAod = checked; persistAndBroadcast(); });
+        addDivider(actionsCard);
+
+        addSwitchRow(actionsCard,
+                "Показывать пустую капсулу",
+                "Отображать мини-капсулу даже без музыки и уведомлений",
+                config.alwaysShowCapsule,
+                checked -> { config.alwaysShowCapsule = checked; persistAndBroadcast(); });
+
+        controlsContainer.addView(actionsCard);
+    }
+
+    private void updatePreviewHint() {
+        if (previewHintTv == null) return;
+        if (config.betaCompactMode) {
+            previewHintTv.setText("Бета-компакт • тап по часам имитирует выкл/вкл экрана");
+        } else {
+            previewHintTv.setText("Предпросмотр • тап по капсуле раскрывает меню");
+        }
     }
 
     @Override
@@ -412,7 +702,7 @@ public final class MainActivity extends Activity {
         FrameLayout stage = new FrameLayout(this);
         GradientDrawable wallBg = new GradientDrawable(
                 GradientDrawable.Orientation.TL_BR,
-                new int[] {0xFF151C36, 0xFF1C1433, 0xFF0C101A});
+                new int[] {0xFF151C36, 0xFF1F163B, 0xFF0C101A});
         wallBg.setCornerRadius(dp(26));
         wallBg.setStroke(dp(1), 0x26FFFFFF);
         stage.setBackground(wallBg);
@@ -421,13 +711,17 @@ public final class MainActivity extends Activity {
         LinearLayout clockCol = new LinearLayout(this);
         clockCol.setOrientation(LinearLayout.VERTICAL);
         clockCol.setGravity(Gravity.CENTER_HORIZONTAL);
-        clockCol.setPadding(0, dp(22), 0, 0);
+        clockCol.setPadding(0, dp(18), 0, dp(8));
+        clockCol.setOnClickListener(v -> {
+            if (previewBar != null && previewBar.isExpanded()) {
+                previewBar.onScreenTurnedOff();
+            }
+        });
 
-        TextView dateTv = new TextView(this);
-        dateTv.setText("Предпросмотр • тап по капсуле раскрывает меню");
-        dateTv.setTextColor(0x99FFFFFF);
-        dateTv.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11.5f);
-        clockCol.addView(dateTv);
+        previewHintTv = new TextView(this);
+        previewHintTv.setTextColor(0x99FFFFFF);
+        previewHintTv.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f);
+        clockCol.addView(previewHintTv);
 
         TextView timeTv = new TextView(this);
         timeTv.setText("16:45");
@@ -478,7 +772,7 @@ public final class MainActivity extends Activity {
             }
             @Override
             public void onOpenMediaApp() {
-                Toast.makeText(MainActivity.this, "Открытие плеера (на локскрине разблокирует экран)", Toast.LENGTH_SHORT).show();
+                Toast.makeText(MainActivity.this, "Открытие плеера (на локскрине запросит разблокировку)", Toast.LENGTH_SHORT).show();
             }
             @Override
             public void onOpenNotification(NotifItem item) {
@@ -524,8 +818,8 @@ public final class MainActivity extends Activity {
 
         mockNotifs = new ArrayList<>();
         String[][] demos = {
-            {"AyuGram", "Артём", "Листай стопку вверх/вниз прямо пальцем!"},
-            {"VK", "Максим", "Карточки плавно накладываются друг на друга"},
+            {"AyuGram", "Артём", "Релиз 1.G.1 — листай стопку и пробуй пресеты!"},
+            {"VK", "Максим", "Задний блюр и компактный Бета-режим выглядят топ"},
             {"Telegram", "Дима", "Скинул новый трек, оцени в плеере"},
             {"WhatsApp", "Саша", "Встречаемся в 19:00 у центра"}
         };
@@ -556,10 +850,21 @@ public final class MainActivity extends Activity {
         return bmp;
     }
 
-    private void updateStyleChips() {
-        for (int i = 0; i < styleChips.length; i++) {
-            boolean selected = (config.style == i);
-            TextView chip = styleChips[i];
+    private TextView makeChoiceChip(String label, float textSizeSp) {
+        TextView chip = new TextView(this);
+        chip.setText(label);
+        chip.setTextSize(TypedValue.COMPLEX_UNIT_SP, textSizeSp);
+        chip.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
+        chip.setGravity(Gravity.CENTER);
+        chip.setPadding(dp(6), dp(10), dp(6), dp(10));
+        return chip;
+    }
+
+    private void styleChoiceGroup(TextView[] chips, int selectedIndex) {
+        if (chips == null) return;
+        for (int i = 0; i < chips.length; i++) {
+            boolean selected = (selectedIndex == i);
+            TextView chip = chips[i];
             chip.setTextColor(selected ? Color.WHITE : 0x99FFFFFF);
             GradientDrawable bg = new GradientDrawable();
             bg.setColor(selected ? 0xFF2A3661 : 0xFF141824);
@@ -569,16 +874,23 @@ public final class MainActivity extends Activity {
         }
     }
 
-    private void updateWidthChips() {
-        for (int i = 0; i < widthChips.length; i++) {
-            boolean selected = (config.capsuleWidthMode == i);
-            TextView chip = widthChips[i];
-            chip.setTextColor(selected ? Color.WHITE : 0x99FFFFFF);
-            GradientDrawable bg = new GradientDrawable();
-            bg.setColor(selected ? 0xFF2A3661 : 0xFF141824);
-            bg.setCornerRadius(dp(14));
-            bg.setStroke(dp(1), selected ? 0xFF6C8CFF : 0x22FFFFFF);
-            chip.setBackground(bg);
+    private void updateStyleChips() { styleChoiceGroup(styleChips, config.style); }
+    private void updateWidthChips() { styleChoiceGroup(widthChips, config.capsuleWidthMode); }
+    private void updateNotifSourceChips() { styleChoiceGroup(notifSourceChips, config.notifSourceMode); }
+    private void updateAnimStyleChips() { styleChoiceGroup(animStyleChips, config.animStyle); }
+
+    private void updateAccentSwatches() {
+        if (accentSwatches == null) return;
+        for (int i = 0; i < accentSwatches.length; i++) {
+            int col = NowBarConfig.ACCENT_SWATCHES[i];
+            boolean sel = (config.manualAccentColor == col);
+            GradientDrawable d = new GradientDrawable();
+            d.setShape(GradientDrawable.OVAL);
+            d.setColor(col);
+            d.setStroke(dp(sel ? 3 : 1), sel ? Color.WHITE : 0x44FFFFFF);
+            accentSwatches[i].setBackground(d);
+            accentSwatches[i].setScaleX(sel ? 1.12f : 1.0f);
+            accentSwatches[i].setScaleY(sel ? 1.12f : 1.0f);
         }
     }
 
@@ -622,13 +934,17 @@ public final class MainActivity extends Activity {
     }
 
     private LinearLayout createCard() {
+        return createAccentCard(0xFF131722, 0x1EFFFFFF);
+    }
+
+    private LinearLayout createAccentCard(int fillColor, int strokeColor) {
         LinearLayout card = new LinearLayout(this);
         card.setOrientation(LinearLayout.VERTICAL);
         card.setPadding(dp(14), dp(8), dp(14), dp(8));
         GradientDrawable bg = new GradientDrawable();
-        bg.setColor(0xFF131722);
+        bg.setColor(fillColor);
         bg.setCornerRadius(dp(20));
-        bg.setStroke(dp(1), 0x1EFFFFFF);
+        bg.setStroke(dp(1), strokeColor);
         card.setBackground(bg);
         return card;
     }
@@ -657,14 +973,14 @@ public final class MainActivity extends Activity {
         TextView t = new TextView(this);
         t.setText(title);
         t.setTextColor(Color.WHITE);
-        t.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14.5f);
+        t.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f);
         t.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
         textCol.addView(t);
 
         TextView s = new TextView(this);
         s.setText(subtitle);
         s.setTextColor(0x88FFFFFF);
-        s.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f);
+        s.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11.8f);
         textCol.addView(s);
 
         row.addView(textCol, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));

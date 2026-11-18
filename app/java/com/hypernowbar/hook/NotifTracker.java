@@ -11,6 +11,7 @@ import android.os.Looper;
 import android.os.Parcelable;
 import android.service.notification.NotificationListenerService;
 import android.service.notification.StatusBarNotification;
+import com.hypernowbar.config.NowBarConfig;
 import com.hypernowbar.model.NotifItem;
 import com.hypernowbar.ui.CapsuleColors;
 import de.robv.android.xposed.XC_MethodHook;
@@ -47,6 +48,8 @@ public final class NotifTracker {
     private final Map<String, String> appNameCache = new HashMap<>();
     private List<NotifItem> latestItems = new ArrayList<>();
     private boolean hideSeenAfterUnlock = true;
+    private int notifSourceMode = NowBarConfig.NOTIF_SOURCE_ALL_SHADE;
+    private long lastScreenOffTimeMs = 0L;
 
     private static final Set<String> IGNORED_SYSTEM_PACKAGES = new HashSet<>();
     static {
@@ -159,6 +162,26 @@ public final class NotifTracker {
         });
     }
 
+    public void setNotifSourceMode(int mode) {
+        mainHandler.post(() -> {
+            if (notifSourceMode == mode) return;
+            notifSourceMode = mode;
+            if (mode == NowBarConfig.NOTIF_SOURCE_AFTER_SCREEN_OFF && lastScreenOffTimeMs == 0L) {
+                lastScreenOffTimeMs = System.currentTimeMillis();
+            }
+            rebuildAndNotify();
+        });
+    }
+
+    public void onScreenTurnedOff() {
+        mainHandler.post(() -> {
+            lastScreenOffTimeMs = System.currentTimeMillis();
+            if (notifSourceMode == NowBarConfig.NOTIF_SOURCE_AFTER_SCREEN_OFF) {
+                rebuildAndNotify();
+            }
+        });
+    }
+
     /**
      * Called when the user unlocks the phone: marks all currently visible notifications as seen
      * so they disappear from the lockscreen Now Bar (while staying intact in Android's shade).
@@ -216,6 +239,13 @@ public final class NotifTracker {
         for (StatusBarNotification sbn : sbnCache.values()) {
             Notification n = sbn.getNotification();
             if (n == null) continue;
+
+            // Mode 1: Only show notifications posted AFTER the screen was turned off
+            if (notifSourceMode == NowBarConfig.NOTIF_SOURCE_AFTER_SCREEN_OFF && lastScreenOffTimeMs > 0L) {
+                if (sbn.getPostTime() < lastScreenOffTimeMs) {
+                    continue;
+                }
+            }
 
             // Hide notifications that were already present before the last screen unlock
             if (hideSeenAfterUnlock) {
