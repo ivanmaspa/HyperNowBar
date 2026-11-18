@@ -87,7 +87,7 @@ public final class MainActivity extends Activity {
         LinearLayout titleCol = new LinearLayout(this);
         titleCol.setOrientation(LinearLayout.VERTICAL);
         TextView titleTv = new TextView(this);
-        titleTv.setText("HyperNowBar 2.4 Beta");
+        titleTv.setText("HyperNowBar 2.5 Beta");
         titleTv.setTextColor(Color.WHITE);
         titleTv.setTextSize(TypedValue.COMPLEX_UNIT_SP, 23f);
         titleTv.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
@@ -460,6 +460,23 @@ public final class MainActivity extends Activity {
                 previewBar.setMediaState(mockMedia);
             }
             @Override
+            public void onSwitchPlayer() {
+                mockMedia.activeSessionIndex = (mockMedia.activeSessionIndex + 1) % 2;
+                if (mockMedia.activeSessionIndex == 0) {
+                    mockMedia.appLabel = "Яндекс Музыка";
+                    mockMedia.title = "Midnight City";
+                    mockMedia.artist = "M83";
+                    mockMedia.artwork = createDemoArtwork(0xFF5C6BC0);
+                } else {
+                    mockMedia.appLabel = "Spotify";
+                    mockMedia.title = "Starboy";
+                    mockMedia.artist = "The Weeknd";
+                    mockMedia.artwork = createDemoArtwork(0xFF1DB954);
+                }
+                mockMedia.accentColor = CapsuleColors.extractVibrantAccent(mockMedia.artwork);
+                previewBar.setMediaState(mockMedia);
+            }
+            @Override
             public void onOpenMediaApp() {
                 Toast.makeText(MainActivity.this, "Открытие плеера (на локскрине разблокирует экран)", Toast.LENGTH_SHORT).show();
             }
@@ -497,6 +514,9 @@ public final class MainActivity extends Activity {
         mockMedia.isPlaying = true;
         mockMedia.title = "Midnight City";
         mockMedia.artist = "M83";
+        mockMedia.appLabel = "Яндекс Музыка";
+        mockMedia.sessionCount = 2;
+        mockMedia.activeSessionIndex = 0;
         mockMedia.durationMs = 243_000L;
         mockMedia.positionMs = 86_000L;
         mockMedia.artwork = createDemoArtwork(0xFF5C6BC0);

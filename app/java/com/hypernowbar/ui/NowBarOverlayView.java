@@ -47,6 +47,7 @@ public final class NowBarOverlayView extends FrameLayout {
         void onNext();
         void onPrevious();
         void onSeekTo(long positionMs);
+        void onSwitchPlayer();
         void onOpenMediaApp();
         void onOpenNotification(NotifItem item);
         void onDismissNotification(String key);
@@ -91,6 +92,8 @@ public final class NowBarOverlayView extends FrameLayout {
     private final TextView expTitleView;
     private final TextView expArtistView;
     private final EqualizerView expEqualizer;
+    private final LinearLayout expSwitchPlayerBtn;
+    private final TextView expSwitchPlayerText;
     private final SeekBar expSeekBar;
     private final TextView expPosText;
     private final TextView expDurText;
@@ -350,6 +353,41 @@ public final class NowBarOverlayView extends FrameLayout {
         LinearLayout.LayoutParams expEqLp = new LinearLayout.LayoutParams(dp(20), dp(16));
         expEqLp.leftMargin = dp(8);
         mediaTopRow.addView(expEqualizer, expEqLp);
+
+        // Compact multi-player switcher button (ONLY shown when 2+ music apps are open!)
+        expSwitchPlayerBtn = new LinearLayout(context);
+        expSwitchPlayerBtn.setOrientation(LinearLayout.HORIZONTAL);
+        expSwitchPlayerBtn.setGravity(Gravity.CENTER_VERTICAL);
+        expSwitchPlayerBtn.setPadding(dp(8), dp(5), dp(9), dp(5));
+        expSwitchPlayerBtn.setClickable(true);
+        expSwitchPlayerBtn.setFocusable(true);
+        GradientDrawable swBg = new GradientDrawable();
+        swBg.setColor(0x28FFFFFF);
+        swBg.setCornerRadius(dp(14));
+        swBg.setStroke(dp(1), 0x3DFFFFFF);
+        expSwitchPlayerBtn.setBackground(swBg);
+        expSwitchPlayerBtn.setVisibility(GONE);
+        expSwitchPlayerBtn.setOnClickListener(v -> {
+            if (this.callback != null) this.callback.onSwitchPlayer();
+        });
+
+        ImageView swIcon = new ImageView(context);
+        swIcon.setImageDrawable(VectorIcons.create(VectorIcons.ICON_SWITCH, Color.WHITE));
+        LinearLayout.LayoutParams swIconLp = new LinearLayout.LayoutParams(dp(14), dp(14));
+        swIconLp.rightMargin = dp(4);
+        expSwitchPlayerBtn.addView(swIcon, swIconLp);
+
+        expSwitchPlayerText = new TextView(context);
+        expSwitchPlayerText.setText("1/2");
+        expSwitchPlayerText.setTextColor(Color.WHITE);
+        expSwitchPlayerText.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f);
+        expSwitchPlayerText.setTypeface(Typeface.DEFAULT_BOLD);
+        expSwitchPlayerBtn.addView(expSwitchPlayerText);
+
+        LinearLayout.LayoutParams swBtnLp = new LinearLayout.LayoutParams(
+                LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT);
+        swBtnLp.leftMargin = dp(8);
+        mediaTopRow.addView(expSwitchPlayerBtn, swBtnLp);
 
         mediaCard.addView(mediaTopRow);
 
@@ -859,7 +897,17 @@ public final class NowBarOverlayView extends FrameLayout {
                 expArtView.setBackground(ph);
             }
             expTitleView.setText(mediaState.title);
-            expArtistView.setText(TextUtils.isEmpty(mediaState.artist) ? "Сейчас играет" : mediaState.artist);
+            boolean multiPlayers = mediaState.sessionCount > 1;
+            String baseArtist = TextUtils.isEmpty(mediaState.artist) ? "Сейчас играет" : mediaState.artist;
+            if (multiPlayers && !TextUtils.isEmpty(mediaState.appLabel)) {
+                expArtistView.setText(baseArtist + " • " + mediaState.appLabel);
+            } else {
+                expArtistView.setText(baseArtist);
+            }
+            expSwitchPlayerBtn.setVisibility(multiPlayers ? VISIBLE : GONE);
+            if (multiPlayers) {
+                expSwitchPlayerText.setText((mediaState.activeSessionIndex + 1) + "/" + mediaState.sessionCount);
+            }
             expEqualizer.setVisibility(config.showEqualizer ? VISIBLE : GONE);
             expEqualizer.setPlaying(mediaState.isPlaying && expanded && hostVisible);
             expPlayPauseBtn.setImageDrawable(VectorIcons.create(

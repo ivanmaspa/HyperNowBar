@@ -1,7 +1,8 @@
 package com.hypernowbar.hook;
 
-import android.app.PendingIntent;
 import android.content.Context;
+import android.content.pm.ApplicationInfo;
+import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
 import android.media.MediaMetadata;
 import android.media.session.MediaController;
@@ -13,10 +14,16 @@ import android.os.SystemClock;
 import com.hypernowbar.model.MediaState;
 import com.hypernowbar.ui.CapsuleColors;
 import de.robv.android.xposed.XposedBridge;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Tracks active media sessions directly inside SystemUI using MediaSessionManager.
+ * Supports switching cleanly between multiple open music apps (e.g. Yandex Music <-> Spotify),
+ * while ignoring stale/empty STATE_NONE background sessions.
  */
 public final class MediaTracker {
     public interface Listener {
@@ -27,7 +34,10 @@ public final class MediaTracker {
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private final Listener listener;
     private MediaSessionManager sessionManager;
+    private final List<MediaController> validControllers = new ArrayList<>();
+    private final Map<String, String> appLabelCache = new HashMap<>();
     private MediaController activeController;
+    private String pinnedPackageName = null;
     private MediaState currentState = new MediaState();
     private Bitmap lastArtworkRef;
     private int cachedAccent = CapsuleColors.DEFAULT_ACCENT;
@@ -36,7 +46,7 @@ public final class MediaTracker {
             new MediaSessionManager.OnActiveSessionsChangedListener() {
                 @Override
                 public void onActiveSessionsChanged(List<MediaController> controllers) {
-                    mainHandler.post(() -> selectController(controllers));
+                    mainHandler.post(() -> updateSessions(controllers));
                 }
             };
 
@@ -45,7 +55,6 @@ public final class MediaTracker {
         public void onPlaybackStateChanged(PlaybackState state) {
             mainHandler.post(() -> {
                 refreshStateFromController();
-                // If current controller stopped/paused, see if another session is playing
                 if (state == null || state.getState() != PlaybackState.STATE_PLAYING) {
                     pollActiveSessions();
                 }
@@ -59,7 +68,10 @@ public final class MediaTracker {
 
         @Override
         public void onSessionDestroyed() {
-            mainHandler.post(() -> pollActiveSessions());
+            mainHandler.post(() -> {
+                pinnedPackageName = null;
+                pollActiveSessions();
+            });
         }
     };
 
@@ -83,45 +95,139 @@ public final class MediaTracker {
         if (sessionManager == null) return;
         try {
             List<MediaController> list = sessionManager.getActiveSessions(null);
-            selectController(list);
+            updateSessions(list);
         } catch (Throwable t) {
             XposedBridge.log("[HyperNowBar] MediaTracker poll error: " + t.getMessage());
         }
     }
 
-    private void selectController(List<MediaController> controllers) {
-        MediaController best = null;
-        if (controllers != null) {
-            for (MediaController mc : controllers) {
-                if (mc == null) continue;
-                PlaybackState ps = mc.getPlaybackState();
-                if (ps != null && ps.getState() == PlaybackState.STATE_PLAYING) {
-                    best = mc;
-                    break;
+    /**
+     * Cycles to the next open music player (when 2+ music apps are open).
+     */
+    public void switchToNextPlayer() {
+        if (validControllers.size() <= 1) return;
+        int curIdx = findActiveIndex();
+        int nextIdx = (curIdx + 1) % validControllers.size();
+        MediaController next = validControllers.get(nextIdx);
+        pinnedPackageName = next.getPackageName();
+        bindActiveController(next);
+        refreshStateFromController();
+    }
+
+    private void updateSessions(List<MediaController> rawControllers) {
+        // Filter out dead/empty sessions (e.g. STATE_NONE without track metadata) and deduplicate per package
+        Map<String, MediaController> byPkg = new LinkedHashMap<>();
+        if (rawControllers != null) {
+            for (MediaController mc : rawControllers) {
+                if (mc == null || !isRealMediaSession(mc)) continue;
+                String pkg = mc.getPackageName() != null ? mc.getPackageName() : "";
+                MediaController existing = byPkg.get(pkg);
+                if (existing == null || isPlayingController(mc)) {
+                    byPkg.put(pkg, mc);
                 }
-                if (best == null && mc.getMetadata() != null) {
-                    best = mc;
-                }
-            }
-            if (best == null && !controllers.isEmpty()) {
-                best = controllers.get(0);
             }
         }
 
-        if (activeController != best) {
-            if (activeController != null) {
-                try {
-                    activeController.unregisterCallback(controllerCallback);
-                } catch (Throwable ignored) {}
+        validControllers.clear();
+        validControllers.addAll(byPkg.values());
+
+        MediaController chosen = null;
+
+        // 1. If user explicitly pinned a player via switcher and it's still open, honor it
+        if (pinnedPackageName != null) {
+            for (MediaController mc : validControllers) {
+                if (pinnedPackageName.equals(mc.getPackageName())) {
+                    chosen = mc;
+                    break;
+                }
             }
-            activeController = best;
-            if (activeController != null) {
-                try {
-                    activeController.registerCallback(controllerCallback, mainHandler);
-                } catch (Throwable ignored) {}
+            if (chosen == null) {
+                pinnedPackageName = null;
             }
         }
+
+        // 2. Otherwise prefer whichever session is actively PLAYING
+        if (chosen == null) {
+            for (MediaController mc : validControllers) {
+                if (isPlayingController(mc)) {
+                    chosen = mc;
+                    break;
+                }
+            }
+        }
+
+        // 3. Fallback to first valid paused session
+        if (chosen == null && !validControllers.isEmpty()) {
+            chosen = validControllers.get(0);
+        }
+
+        bindActiveController(chosen);
         refreshStateFromController();
+    }
+
+    private static boolean isPlayingController(MediaController mc) {
+        PlaybackState ps = mc.getPlaybackState();
+        return ps != null && (ps.getState() == PlaybackState.STATE_PLAYING
+                || ps.getState() == PlaybackState.STATE_BUFFERING);
+    }
+
+    private static boolean isRealMediaSession(MediaController mc) {
+        PlaybackState ps = mc.getPlaybackState();
+        int st = ps != null ? ps.getState() : PlaybackState.STATE_NONE;
+        if (st == PlaybackState.STATE_PLAYING || st == PlaybackState.STATE_BUFFERING) {
+            return true;
+        }
+        MediaMetadata meta = mc.getMetadata();
+        boolean hasTitle = false;
+        if (meta != null) {
+            String t1 = meta.getString(MediaMetadata.METADATA_KEY_DISPLAY_TITLE);
+            String t2 = meta.getString(MediaMetadata.METADATA_KEY_TITLE);
+            hasTitle = (t1 != null && !t1.trim().isEmpty()) || (t2 != null && !t2.trim().isEmpty());
+        }
+        return st == PlaybackState.STATE_PAUSED && hasTitle;
+    }
+
+    private void bindActiveController(MediaController target) {
+        if (activeController == target) return;
+        if (activeController != null) {
+            try {
+                activeController.unregisterCallback(controllerCallback);
+            } catch (Throwable ignored) {}
+        }
+        activeController = target;
+        if (activeController != null) {
+            try {
+                activeController.registerCallback(controllerCallback, mainHandler);
+            } catch (Throwable ignored) {}
+        }
+    }
+
+    private int findActiveIndex() {
+        if (activeController == null || validControllers.isEmpty()) return 0;
+        for (int i = 0; i < validControllers.size(); i++) {
+            MediaController mc = validControllers.get(i);
+            if (mc == activeController || (mc.getPackageName() != null
+                    && mc.getPackageName().equals(activeController.getPackageName()))) {
+                return i;
+            }
+        }
+        return 0;
+    }
+
+    private String resolveAppLabel(String pkg) {
+        if (pkg == null || pkg.isEmpty()) return "";
+        String cached = appLabelCache.get(pkg);
+        if (cached != null) return cached;
+        try {
+            PackageManager pm = context.getPackageManager();
+            ApplicationInfo info = pm.getApplicationInfo(pkg, 0);
+            CharSequence lbl = pm.getApplicationLabel(info);
+            String name = lbl != null ? lbl.toString() : pkg;
+            appLabelCache.put(pkg, name);
+            return name;
+        } catch (Throwable ignored) {
+            return "";
+        }
     }
 
     private void refreshStateFromController() {
@@ -139,6 +245,9 @@ public final class MediaTracker {
                 s.hasSession = true;
                 s.isPlaying = (pState == PlaybackState.STATE_PLAYING || pState == PlaybackState.STATE_BUFFERING);
                 s.packageName = mc.getPackageName() != null ? mc.getPackageName() : "";
+                s.appLabel = resolveAppLabel(s.packageName);
+                s.sessionCount = Math.max(1, validControllers.size());
+                s.activeSessionIndex = findActiveIndex();
                 s.sessionActivity = mc.getSessionActivity();
 
                 if (meta != null) {

@@ -11,6 +11,9 @@ public final class MediaState {
     public String title = "";
     public String artist = "";
     public String packageName = "";
+    public String appLabel = "";
+    public int sessionCount = 0;
+    public int activeSessionIndex = 0;
     public Bitmap artwork = null;
     public int accentColor = CapsuleColors.DEFAULT_ACCENT;
     public long durationMs = 0L;

@@ -22,6 +22,7 @@ public final class VectorIcons {
     public static final int ICON_MUSIC = 6;
     public static final int ICON_BELL = 7;
     public static final int ICON_CHEVRON_DOWN = 8;
+    public static final int ICON_SWITCH = 9;
 
     public static Drawable create(int iconType, int color) {
         return new IconDrawable(iconType, color);
@@ -131,6 +132,23 @@ public final class VectorIcons {
                     path.moveTo(l + s * 0.24f, t + s * 0.36f);
                     path.lineTo(cx, t + s * 0.66f);
                     path.lineTo(l + s * 0.76f, t + s * 0.36f);
+                    canvas.drawPath(path, strokePaint);
+                    break;
+                }
+                case ICON_SWITCH: {
+                    strokePaint.setStrokeWidth(s * 0.095f);
+                    // Top arrow pointing right
+                    canvas.drawLine(l + s * 0.20f, t + s * 0.34f, l + s * 0.78f, t + s * 0.34f, strokePaint);
+                    path.moveTo(l + s * 0.62f, t + s * 0.20f);
+                    path.lineTo(l + s * 0.78f, t + s * 0.34f);
+                    path.lineTo(l + s * 0.62f, t + s * 0.48f);
+                    canvas.drawPath(path, strokePaint);
+                    // Bottom arrow pointing left
+                    path.reset();
+                    canvas.drawLine(l + s * 0.80f, t + s * 0.66f, l + s * 0.22f, t + s * 0.66f, strokePaint);
+                    path.moveTo(l + s * 0.38f, t + s * 0.52f);
+                    path.lineTo(l + s * 0.22f, t + s * 0.66f);
+                    path.lineTo(l + s * 0.38f, t + s * 0.80f);
                     canvas.drawPath(path, strokePaint);
                     break;
                 }

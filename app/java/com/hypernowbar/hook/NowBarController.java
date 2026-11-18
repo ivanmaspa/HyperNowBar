@@ -234,6 +234,11 @@ public final class NowBarController {
             }
 
             @Override
+            public void onSwitchPlayer() {
+                if (mediaTracker != null) mediaTracker.switchToNextPlayer();
+            }
+
+            @Override
             public void onOpenMediaApp() {
                 if (!config.tapMediaOpensApp || mediaTracker == null) return;
                 MediaState ms = mediaTracker.getCurrentState();
