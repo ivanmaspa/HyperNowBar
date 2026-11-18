@@ -87,7 +87,7 @@ public final class MainActivity extends Activity {
         LinearLayout titleCol = new LinearLayout(this);
         titleCol.setOrientation(LinearLayout.VERTICAL);
         TextView titleTv = new TextView(this);
-        titleTv.setText("HyperNowBar 2.3 Beta");
+        titleTv.setText("HyperNowBar 2.4 Beta");
         titleTv.setTextColor(Color.WHITE);
         titleTv.setTextSize(TypedValue.COMPLEX_UNIT_SP, 23f);
         titleTv.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
@@ -215,12 +215,6 @@ public final class MainActivity extends Activity {
         addDivider(slidersCard);
 
         addSliderRow(slidersCard,
-                "Максимальная высота списка сообщений",
-                160, 440, config.notifMaxHeightDp, " dp",
-                val -> { config.notifMaxHeightDp = val; persistAndBroadcast(); });
-        addDivider(slidersCard);
-
-        addSliderRow(slidersCard,
                 "Скругление углов капсулы",
                 10, 28, config.cornerRadiusDp, " dp",
                 val -> { config.cornerRadiusDp = val; persistAndBroadcast(); });
@@ -242,13 +236,6 @@ public final class MainActivity extends Activity {
         // 6. Controls & Navigation Card
         root.addView(sectionHeader("Управление и переходы"));
         LinearLayout actionsCard = createCard();
-
-        addSwitchRow(actionsCard,
-                "Стопка уведомлений (стиль iOS)",
-                "Сообщения частично накладываются друг на друга и разворачиваются по тапу",
-                config.iosNotifStack,
-                checked -> { config.iosNotifStack = checked; persistAndBroadcast(); });
-        addDivider(actionsCard);
 
         addSwitchRow(actionsCard,
                 "Убирать сообщения после разблокировки",
@@ -517,9 +504,10 @@ public final class MainActivity extends Activity {
 
         mockNotifs = new ArrayList<>();
         String[][] demos = {
-            {"AyuGram", "Артём", "Зацени 2.0 с быстрыми кнопками и скроллом!"},
-            {"VK", "Максим", "Скинул новый трек в личку"},
-            {"Telegram", "Чат", "Прокрутка сообщений больше не вызывает ввод PIN"}
+            {"AyuGram", "Артём", "Листай стопку вверх/вниз прямо пальцем!"},
+            {"VK", "Максим", "Карточки плавно накладываются друг на друга"},
+            {"Telegram", "Дима", "Скинул новый трек, оцени в плеере"},
+            {"WhatsApp", "Саша", "Встречаемся в 19:00 у центра"}
         };
         for (int i = 0; i < demos.length; i++) {
             NotifItem n = new NotifItem();

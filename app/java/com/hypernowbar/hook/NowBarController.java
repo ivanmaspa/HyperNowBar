@@ -260,6 +260,7 @@ public final class NowBarController {
         });
 
         this.overlayView.setConfig(config);
+        StockNotifHider.setAlwaysKeepClockStretched(config.enabled && config.hideStockNotifications);
         FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.MATCH_PARENT);
@@ -487,6 +488,7 @@ public final class NowBarController {
         boolean hideStock = config.enabled
                 && config.hideStockNotifications
                 && lastOnKeyguard;
+        StockNotifHider.setAlwaysKeepClockStretched(config.enabled && config.hideStockNotifications);
         StockNotifHider.setHiddenOnKeyguard(hideStock);
 
         overlayView.setHostVisible(showNowBar);
@@ -514,6 +516,7 @@ public final class NowBarController {
                         if (notifTracker != null) {
                             notifTracker.setHideSeenAfterUnlock(config.clearNotifsAfterUnlock);
                         }
+                        StockNotifHider.setAlwaysKeepClockStretched(config.enabled && config.hideStockNotifications);
                         overlayView.setConfig(config);
                         applyLockscreenState();
                     });

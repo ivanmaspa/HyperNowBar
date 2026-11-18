@@ -24,25 +24,21 @@ import android.view.animation.PathInterpolator;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
-import android.widget.ScrollView;
 import android.widget.SeekBar;
 import android.widget.TextView;
 import com.hypernowbar.config.NowBarConfig;
 import com.hypernowbar.model.MediaState;
 import com.hypernowbar.model.NotifItem;
-import java.text.SimpleDateFormat;
 import java.util.ArrayList;
-import java.util.Date;
 import java.util.List;
-import java.util.Locale;
 
 /**
- * Unified One UI 7 Now Bar + ColorOS Fluid Glass + Monochrome B&W Capsule overlay (v2.0).
+ * Unified One UI 7 Now Bar + ColorOS Fluid Glass + Monochrome B&W Capsule overlay (v2.4-beta).
  * Features:
  *  - Inline 1-tap Play/Pause + Next track controls right inside the collapsed pill
+ *  - Native HyperOS GPU MiBackgroundBlur / SurfaceFlinger BackgroundBlurDrawable
+ *  - Pure continuously scrollable 3D iOS overlapping notification card deck (StackedNotifDeckView)
  *  - Expanded sheet anchored strictly ABOVE the under-display fingerprint scanner
- *  - Isolated touch scrolling so swiping through notifications NEVER triggers password bouncer
- *  - Configurable tap-to-open-app for Media Player and Notifications
  */
 public final class NowBarOverlayView extends FrameLayout {
 
@@ -65,8 +61,6 @@ public final class NowBarOverlayView extends FrameLayout {
     private MediaState mediaState = new MediaState();
     private List<NotifItem> notifications = new ArrayList<>();
     private boolean expanded = false;
-    private boolean notifStackFanned = false;
-    private int stackTopIndex = 0;
     private boolean hostVisible = false;
     private boolean seeking = false;
     private boolean previewMode = false;
@@ -106,10 +100,8 @@ public final class NowBarOverlayView extends FrameLayout {
 
     private final LinearLayout notifSection;
     private final TextView notifHeaderTitle;
-    private final TextView notifStackToggleBtn;
     private final TextView notifClearBtn;
-    private final ScrollView notifScroll;
-    private final LinearLayout notifListContainer;
+    private final StackedNotifDeckView notifDeckView;
     private final TextView notifEmptyHint;
 
     private final int[] tmpLoc = new int[2];
@@ -132,7 +124,7 @@ public final class NowBarOverlayView extends FrameLayout {
 
         // 1. Scrim backdrop (only active when expanded)
         scrimView = new View(context);
-        scrimView.setBackgroundColor(0xA605070D);
+        scrimView.setBackgroundColor(0x9905070D);
         scrimView.setAlpha(0f);
         scrimView.setVisibility(GONE);
         scrimView.setClickable(true);
@@ -179,7 +171,6 @@ public final class NowBarOverlayView extends FrameLayout {
         eqLp.rightMargin = dp(6);
         pillMediaGroup.addView(pillEqualizer, eqLp);
 
-        // Inline 1-tap Play/Pause + Next track buttons right inside the collapsed pill!
         pillQuickControls = new LinearLayout(context);
         pillQuickControls.setOrientation(LinearLayout.HORIZONTAL);
         pillQuickControls.setGravity(Gravity.CENTER_VERTICAL);
@@ -246,7 +237,6 @@ public final class NowBarOverlayView extends FrameLayout {
 
         capsulePill.addView(pillNotifGroup);
 
-        // Minimal idle label
         pillEmptyLabel = new TextView(context);
         pillEmptyLabel.setText("Now Bar • Нет событий");
         pillEmptyLabel.setTextColor(0x99FFFFFF);
@@ -260,15 +250,16 @@ public final class NowBarOverlayView extends FrameLayout {
         pillLp.bottomMargin = dp(config.bottomMarginDp);
         addView(capsulePill, pillLp);
 
-        // 3. Expanded Frosted Glass Sheet (anchored cleanly ABOVE the optical fingerprint scanner!)
+        // 3. Expanded Frosted Glass Sheet (anchored strictly ABOVE the optical fingerprint scanner)
         expandedSheet = new LinearLayout(context);
         expandedSheet.setOrientation(LinearLayout.VERTICAL);
         expandedSheet.setPadding(dp(16), dp(10), dp(16), dp(16));
         expandedSheet.setElevation(dp(18));
         expandedSheet.setVisibility(GONE);
         expandedSheet.setClickable(true);
+        expandedSheet.setClipChildren(false);
 
-        // Top drag/collapse bar with smooth swipe-down-to-collapse gesture
+        // Top drag/collapse handle
         FrameLayout handleWrap = new FrameLayout(context);
         handleWrap.setPadding(0, dp(2), 0, dp(12));
         final float[] dragStartY = new float[1];
@@ -353,8 +344,7 @@ public final class NowBarOverlayView extends FrameLayout {
         artistLp.topMargin = dp(2);
         metaCol.addView(expArtistView, artistLp);
 
-        LinearLayout.LayoutParams metaLp = new LinearLayout.LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f);
-        mediaTopRow.addView(metaCol, metaLp);
+        mediaTopRow.addView(metaCol, new LinearLayout.LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f));
 
         expEqualizer = new EqualizerView(context);
         LinearLayout.LayoutParams expEqLp = new LinearLayout.LayoutParams(dp(20), dp(16));
@@ -363,7 +353,6 @@ public final class NowBarOverlayView extends FrameLayout {
 
         mediaCard.addView(mediaTopRow);
 
-        // SeekBar + timestamps
         expSeekBar = new SeekBar(context);
         expSeekBar.setPadding(dp(4), dp(6), dp(4), dp(2));
         expSeekBar.setMax(1000);
@@ -406,7 +395,6 @@ public final class NowBarOverlayView extends FrameLayout {
         timeRow.addView(expDurText, new LinearLayout.LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f));
         mediaCard.addView(timeRow);
 
-        // Transport controls row
         LinearLayout ctrlRow = new LinearLayout(context);
         ctrlRow.setOrientation(LinearLayout.HORIZONTAL);
         ctrlRow.setGravity(Gravity.CENTER);
@@ -437,9 +425,10 @@ public final class NowBarOverlayView extends FrameLayout {
         expandedSheet.addView(mediaCard, new LinearLayout.LayoutParams(
                 LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT));
 
-        // --- Expanded Notifications Section ---
+        // --- Pure Scrollable 3D iOS Overlapping Notification Deck ---
         notifSection = new LinearLayout(context);
         notifSection.setOrientation(LinearLayout.VERTICAL);
+        notifSection.setClipChildren(false);
         LinearLayout.LayoutParams nsLp = new LinearLayout.LayoutParams(
                 LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT);
         nsLp.topMargin = dp(12);
@@ -456,25 +445,6 @@ public final class NowBarOverlayView extends FrameLayout {
         notifHeaderTitle.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
         notifHeader.addView(notifHeaderTitle, new LinearLayout.LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f));
 
-        notifStackToggleBtn = new TextView(context);
-        notifStackToggleBtn.setText("Развернуть");
-        notifStackToggleBtn.setTextColor(0xE6FFFFFF);
-        notifStackToggleBtn.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11.5f);
-        notifStackToggleBtn.setPadding(dp(10), dp(4), dp(10), dp(4));
-        GradientDrawable stackBtnBg = new GradientDrawable();
-        stackBtnBg.setColor(0x26FFFFFF);
-        stackBtnBg.setCornerRadius(dp(12));
-        notifStackToggleBtn.setBackground(stackBtnBg);
-        notifStackToggleBtn.setOnClickListener(v -> {
-            notifStackFanned = !notifStackFanned;
-            rebuildNotificationRows();
-            updateNotifHeaderControls();
-        });
-        LinearLayout.LayoutParams stLp = new LinearLayout.LayoutParams(
-                LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT);
-        stLp.rightMargin = dp(6);
-        notifHeader.addView(notifStackToggleBtn, stLp);
-
         notifClearBtn = new TextView(context);
         notifClearBtn.setText("Очистить");
         notifClearBtn.setTextColor(0xD9FFFFFF);
@@ -490,90 +460,27 @@ public final class NowBarOverlayView extends FrameLayout {
         notifHeader.addView(notifClearBtn);
         notifSection.addView(notifHeader);
 
-        // Smooth scrollable list + iOS stack swipe gestures (swipe UP fans out, swipe LEFT/RIGHT flips cards!)
-        notifScroll = new ScrollView(context) {
-            private float downX = 0f;
-            private float downY = 0f;
-            private boolean gestureConsumed = false;
-
+        notifDeckView = new StackedNotifDeckView(context, new StackedNotifDeckView.DeckCallback() {
             @Override
-            protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
-                int maxH = MeasureSpec.makeMeasureSpec(
-                        dp(previewMode ? 175 : config.notifMaxHeightDp), MeasureSpec.AT_MOST);
-                super.onMeasure(widthMeasureSpec, maxH);
+            public void onOpenItem(NotifItem item) {
+                if (config.tapNotifOpensApp && NowBarOverlayView.this.callback != null) {
+                    NowBarOverlayView.this.callback.onOpenNotification(item);
+                }
             }
 
             @Override
-            public boolean dispatchTouchEvent(MotionEvent ev) {
-                if (getParent() != null) {
-                    getParent().requestDisallowInterceptTouchEvent(true);
+            public void onDismissItem(String key) {
+                if (NowBarOverlayView.this.callback != null) {
+                    NowBarOverlayView.this.callback.onDismissNotification(key);
                 }
-                boolean isStackedNow = config.iosNotifStack && !notifStackFanned && notifications.size() > 1;
-                switch (ev.getActionMasked()) {
-                    case MotionEvent.ACTION_DOWN:
-                        downX = ev.getRawX();
-                        downY = ev.getRawY();
-                        gestureConsumed = false;
-                        break;
-                    case MotionEvent.ACTION_MOVE: {
-                        float dx = ev.getRawX() - downX;
-                        float dy = ev.getRawY() - downY;
-                        if (isStackedNow && !gestureConsumed) {
-                            // Swipe UP or DOWN on folded iOS stack -> fan out into full scrollable list!
-                            if (Math.abs(dy) > dp(18) && Math.abs(dy) > Math.abs(dx)) {
-                                gestureConsumed = true;
-                                notifStackFanned = true;
-                                rebuildNotificationRows();
-                                updateNotifHeaderControls();
-                                return true;
-                            }
-                            // Swipe LEFT or RIGHT on folded iOS stack -> flip to next/prev card in deck!
-                            if (Math.abs(dx) > dp(34) && Math.abs(dx) > Math.abs(dy)) {
-                                gestureConsumed = true;
-                                int sz = notifications.size();
-                                if (sz > 1) {
-                                    stackTopIndex = (dx < 0)
-                                            ? (stackTopIndex + 1) % sz
-                                            : (stackTopIndex - 1 + sz) % sz;
-                                    rebuildNotificationRows();
-                                }
-                                return true;
-                            }
-                        } else if (config.iosNotifStack && notifStackFanned && !gestureConsumed) {
-                            // Pull down while at top of fanned list -> fold cleanly back into iOS stack
-                            if (getScrollY() == 0 && dy > dp(56) && Math.abs(dy) > Math.abs(dx) * 1.4f) {
-                                gestureConsumed = true;
-                                notifStackFanned = false;
-                                rebuildNotificationRows();
-                                updateNotifHeaderControls();
-                                return true;
-                            }
-                        }
-                        break;
-                    }
-                    case MotionEvent.ACTION_UP:
-                    case MotionEvent.ACTION_CANCEL:
-                        if (gestureConsumed) {
-                            gestureConsumed = false;
-                            return true;
-                        }
-                        break;
-                }
-                return super.dispatchTouchEvent(ev);
             }
-        };
-        notifScroll.setVerticalScrollBarEnabled(true);
-        notifScroll.setSmoothScrollingEnabled(true);
-        notifScroll.setOverScrollMode(OVER_SCROLL_ALWAYS);
 
-        notifListContainer = new LinearLayout(context);
-        notifListContainer.setOrientation(LinearLayout.VERTICAL);
-        notifListContainer.setClipChildren(false);
-        notifListContainer.setClipToPadding(false);
-        notifScroll.setClipChildren(false);
-        notifScroll.addView(notifListContainer, new LayoutParams(
-                LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT));
-        notifSection.addView(notifScroll, new LinearLayout.LayoutParams(
+            @Override
+            public void onActiveIndexChanged(int activeIndex, int totalCount) {
+                updateNotifHeaderCounter(activeIndex, totalCount);
+            }
+        });
+        notifSection.addView(notifDeckView, new LinearLayout.LayoutParams(
                 LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT));
 
         notifEmptyHint = new TextView(context);
@@ -597,26 +504,21 @@ public final class NowBarOverlayView extends FrameLayout {
         refreshContent();
     }
 
-    /**
-     * Used by NowBarController's touch isolation hook to know if a DOWN event hits the collapsed pill.
-     */
     public boolean isTouchInsideCollapsedPill(float rawX, float rawY) {
         if (expanded || getVisibility() != VISIBLE || capsulePill.getVisibility() != VISIBLE) {
             return false;
         }
         capsulePill.getLocationOnScreen(tmpLoc);
         int pad = dp(6);
-        int left = tmpLoc[0] - pad;
-        int top = tmpLoc[1] - pad;
-        int right = tmpLoc[0] + capsulePill.getWidth() + pad;
-        int bottom = tmpLoc[1] + capsulePill.getHeight() + pad;
-        return rawX >= left && rawX <= right && rawY >= top && rawY <= bottom;
+        return rawX >= (tmpLoc[0] - pad)
+                && rawX <= (tmpLoc[0] + capsulePill.getWidth() + pad)
+                && rawY >= (tmpLoc[1] - pad)
+                && rawY <= (tmpLoc[1] + capsulePill.getHeight() + pad);
     }
 
     @Override
     protected void onAttachedToWindow() {
         super.onAttachedToWindow();
-        // Re-apply theme once attached so ViewRootImpl is ready for real SurfaceFlinger / HyperOS GPU blur!
         post(this::applyVisualTheme);
     }
 
@@ -646,7 +548,6 @@ public final class NowBarOverlayView extends FrameLayout {
         pillLp.bottomMargin = previewMode ? dp(18) : dp(config.bottomMarginDp);
         capsulePill.setLayoutParams(pillLp);
 
-        // Anchor expanded sheet STRICTLY ABOVE the fingerprint scanner (never drops below bottomMarginDp!)
         LayoutParams sheetLp = (LayoutParams) expandedSheet.getLayoutParams();
         sheetLp.bottomMargin = previewMode ? dp(14) : dp(Math.max(config.sheetBottomMarginDp, config.bottomMarginDp));
         expandedSheet.setLayoutParams(sheetLp);
@@ -659,7 +560,6 @@ public final class NowBarOverlayView extends FrameLayout {
         int scrimAlpha255 = Math.max(0, Math.min(235, (config.scrimAlpha * 255) / 100));
         scrimView.setBackgroundColor(Color.argb(scrimAlpha255, 5, 7, 13));
 
-        notifScroll.requestLayout();
         applyVisualTheme();
         refreshContent();
     }
@@ -672,9 +572,6 @@ public final class NowBarOverlayView extends FrameLayout {
 
     public void setNotifications(List<NotifItem> items) {
         this.notifications = items != null ? new ArrayList<>(items) : new ArrayList<>();
-        if (this.notifications.isEmpty() || stackTopIndex >= this.notifications.size()) {
-            stackTopIndex = 0;
-        }
         applyVisualTheme();
         refreshContent();
     }
@@ -748,8 +645,7 @@ public final class NowBarOverlayView extends FrameLayout {
     public void collapse() {
         if (!expanded) return;
         expanded = false;
-        notifStackFanned = false;
-        stackTopIndex = 0;
+        notifDeckView.resetToTop();
         mainHandler.removeCallbacks(progressTicker);
 
         scrimView.animate()
@@ -788,7 +684,7 @@ public final class NowBarOverlayView extends FrameLayout {
 
     private void collapseImmediate() {
         expanded = false;
-        notifStackFanned = false;
+        notifDeckView.resetToTop();
         mainHandler.removeCallbacks(progressTicker);
         scrimView.setVisibility(GONE);
         scrimView.setAlpha(0f);
@@ -813,7 +709,7 @@ public final class NowBarOverlayView extends FrameLayout {
 
     private int resolveActiveAccent() {
         if (config.style == NowBarConfig.STYLE_MONOCHROME_BW) {
-            return 0xFFE6E9F0; // Crisp pure silver-white monochrome accent
+            return 0xFFE6E9F0;
         }
         if (!config.dynamicGlowColor) return CapsuleColors.DEFAULT_ACCENT;
         if (hasVisibleMedia()) return mediaState.accentColor;
@@ -824,7 +720,6 @@ public final class NowBarOverlayView extends FrameLayout {
     private void applyVisualTheme() {
         int accent = resolveActiveAccent();
         boolean useSystemBlur = config.systemBlurEnabled && !previewMode;
-        // When real GPU backdrop blur is active, keep tint more translucent so the blurred wallpaper shines through!
         int baseAlphaPct = useSystemBlur
                 ? Math.max(38, Math.min(82, config.capsuleAlpha - 14))
                 : config.capsuleAlpha;
@@ -886,7 +781,7 @@ public final class NowBarOverlayView extends FrameLayout {
             }
         }
 
-        // --- Update Collapsed Pill ---
+        // --- Collapsed Pill ---
         pillMediaGroup.setVisibility(showMedia ? VISIBLE : GONE);
         pillNotifGroup.setVisibility(showNotifs ? VISIBLE : GONE);
         pillDivider.setVisibility((showMedia && showNotifs) ? VISIBLE : GONE);
@@ -950,7 +845,7 @@ public final class NowBarOverlayView extends FrameLayout {
             pillNotifBadge.setVisibility(VISIBLE);
         }
 
-        // --- Update Expanded Sheet ---
+        // --- Expanded Sheet ---
         mediaCard.setVisibility(showMedia ? VISIBLE : GONE);
         if (showMedia) {
             if (mediaState.artwork != null && !mediaState.artwork.isRecycled()) {
@@ -975,19 +870,20 @@ public final class NowBarOverlayView extends FrameLayout {
             expEqualizer.setPlaying(false);
         }
 
-        updateNotifHeaderControls();
+        notifDeckView.setVisibility(showNotifs ? VISIBLE : GONE);
+        notifClearBtn.setVisibility(showNotifs ? VISIBLE : GONE);
         notifEmptyHint.setVisibility(showNotifs ? GONE : VISIBLE);
-        rebuildNotificationRows();
+        notifDeckView.setItems(notifications);
+        updateNotifHeaderCounter(notifDeckView.getActiveIndex(), notifications.size());
     }
 
-    private void updateNotifHeaderControls() {
-        boolean showNotifs = !notifications.isEmpty();
-        notifHeaderTitle.setText(showNotifs ? ("Уведомления (" + notifications.size() + ")") : "Уведомления");
-        notifClearBtn.setVisibility(showNotifs ? VISIBLE : GONE);
-        boolean canStack = config.iosNotifStack && notifications.size() > 1;
-        notifStackToggleBtn.setVisibility(canStack ? VISIBLE : GONE);
-        if (canStack) {
-            notifStackToggleBtn.setText(notifStackFanned ? "В стопку" : ("Развернуть (" + notifications.size() + ")"));
+    private void updateNotifHeaderCounter(int activeIndex, int totalCount) {
+        if (totalCount <= 0) {
+            notifHeaderTitle.setText("Уведомления");
+        } else if (totalCount == 1) {
+            notifHeaderTitle.setText("Уведомления • 1");
+        } else {
+            notifHeaderTitle.setText("Уведомления • " + (activeIndex + 1) + " / " + totalCount);
         }
     }
 
@@ -1003,159 +899,6 @@ public final class NowBarOverlayView extends FrameLayout {
         } else {
             expSeekBar.setProgress(0);
             expSeekBar.setEnabled(false);
-        }
-    }
-
-    private void rebuildNotificationRows() {
-        notifListContainer.removeAllViews();
-        if (notifications.isEmpty()) return;
-
-        SimpleDateFormat timeFmt = new SimpleDateFormat("HH:mm", Locale.getDefault());
-        boolean stackedMode = config.iosNotifStack && !notifStackFanned && notifications.size() > 1;
-        int limit = stackedMode ? Math.min(notifications.size(), 3) : Math.min(notifications.size(), 25);
-
-        int sz = notifications.size();
-        for (int i = 0; i < limit; i++) {
-            final NotifItem item = stackedMode
-                    ? notifications.get((stackTopIndex + i) % sz)
-                    : notifications.get(i);
-            final boolean isPeekingBackCard = stackedMode && i > 0;
-
-            LinearLayout row = new LinearLayout(getContext());
-            row.setOrientation(LinearLayout.HORIZONTAL);
-            row.setGravity(Gravity.CENTER_VERTICAL);
-            row.setPadding(dp(11), dp(10), dp(11), dp(10));
-
-            GradientDrawable rowBg = new GradientDrawable();
-            if (stackedMode) {
-                // Solid frosted backing in iOS stack mode so lower stacked cards never bleed text through!
-                int cardColor = (i == 0) ? 0xEB1A1E2A : (i == 1 ? 0xE0161923 : 0xD612151E);
-                rowBg.setColor(cardColor);
-                rowBg.setStroke(dp(1), i == 0 ? 0x36FFFFFF : 0x22FFFFFF);
-            } else {
-                rowBg.setColor(0x20FFFFFF);
-                rowBg.setStroke(dp(1), 0x1EFFFFFF);
-            }
-            rowBg.setCornerRadius(dp(16));
-            row.setBackground(rowBg);
-
-            // Physical Z-depth so Card 0 always renders cleanly ON TOP of Card 1 & Card 2 (true iOS stack!)
-            if (stackedMode) {
-                row.setElevation(dp(10 - i * 3));
-                row.setTranslationZ(dp(10 - i * 3));
-                float scale = (i == 0) ? 1.0f : (i == 1 ? 0.94f : 0.88f);
-                row.setScaleX(scale);
-                row.setAlpha(i == 0 ? 1.0f : (i == 1 ? 0.88f : 0.70f));
-            } else {
-                row.setElevation(0f);
-                row.setTranslationZ(0f);
-                row.setScaleX(1.0f);
-                row.setAlpha(1.0f);
-            }
-
-            row.setClickable(true);
-            row.setOnClickListener(v -> {
-                if (isPeekingBackCard) {
-                    // Tap peeking cards behind Card 0 -> fan out the entire iOS stack!
-                    notifStackFanned = true;
-                    rebuildNotificationRows();
-                    updateNotifHeaderControls();
-                } else if (config.tapNotifOpensApp && callback != null) {
-                    callback.onOpenNotification(item);
-                }
-            });
-
-            ImageView iconView = new ImageView(getContext());
-            iconView.setScaleType(ImageView.ScaleType.CENTER_CROP);
-            clipRounded(iconView, dp(9));
-            if (item.appIcon != null) {
-                iconView.setImageDrawable(item.appIcon);
-            } else {
-                iconView.setImageDrawable(VectorIcons.create(VectorIcons.ICON_BELL, Color.WHITE));
-            }
-            LinearLayout.LayoutParams iconLp = new LinearLayout.LayoutParams(dp(32), dp(32));
-            iconLp.rightMargin = dp(10);
-            row.addView(iconView, iconLp);
-
-            LinearLayout textCol = new LinearLayout(getContext());
-            textCol.setOrientation(LinearLayout.VERTICAL);
-
-            LinearLayout headerLine = new LinearLayout(getContext());
-            headerLine.setOrientation(LinearLayout.HORIZONTAL);
-            headerLine.setGravity(Gravity.CENTER_VERTICAL);
-
-            TextView titleTv = new TextView(getContext());
-            titleTv.setText(item.title);
-            titleTv.setTextColor(Color.WHITE);
-            titleTv.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13.5f);
-            titleTv.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
-            titleTv.setSingleLine(true);
-            titleTv.setEllipsize(TextUtils.TruncateAt.END);
-            headerLine.addView(titleTv, new LinearLayout.LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f));
-
-            TextView timeTv = new TextView(getContext());
-            timeTv.setText(item.timestampMs > 0 ? timeFmt.format(new Date(item.timestampMs)) : "");
-            timeTv.setTextColor(0x80FFFFFF);
-            timeTv.setTextSize(TypedValue.COMPLEX_UNIT_SP, 10.5f);
-            LinearLayout.LayoutParams timeLp = new LinearLayout.LayoutParams(
-                    LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT);
-            timeLp.leftMargin = dp(6);
-            headerLine.addView(timeTv, timeLp);
-            textCol.addView(headerLine);
-
-            if (!TextUtils.isEmpty(item.text)) {
-                TextView bodyTv = new TextView(getContext());
-                bodyTv.setText(item.text);
-                bodyTv.setTextColor(0xCCFFFFFF);
-                bodyTv.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12.5f);
-                bodyTv.setMaxLines(stackedMode ? 2 : 3);
-                bodyTv.setEllipsize(TextUtils.TruncateAt.END);
-                LinearLayout.LayoutParams bodyLp = new LinearLayout.LayoutParams(
-                        LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT);
-                bodyLp.topMargin = dp(2);
-                textCol.addView(bodyTv, bodyLp);
-            }
-
-            row.addView(textCol, new LinearLayout.LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f));
-
-            if (item.clearable && !isPeekingBackCard) {
-                ImageView closeBtn = new ImageView(getContext());
-                closeBtn.setImageDrawable(VectorIcons.create(VectorIcons.ICON_CLOSE, 0xB3FFFFFF));
-                closeBtn.setPadding(dp(5), dp(5), dp(5), dp(5));
-                GradientDrawable cbBg = new GradientDrawable();
-                cbBg.setShape(GradientDrawable.OVAL);
-                cbBg.setColor(0x18FFFFFF);
-                closeBtn.setBackground(cbBg);
-                closeBtn.setOnClickListener(v -> {
-                    if (callback != null) callback.onDismissNotification(item.key);
-                });
-                LinearLayout.LayoutParams cbLp = new LinearLayout.LayoutParams(dp(26), dp(26));
-                cbLp.leftMargin = dp(8);
-                row.addView(closeBtn, cbLp);
-            }
-
-            LinearLayout.LayoutParams rowLp = new LinearLayout.LayoutParams(
-                    LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT);
-            if (stackedMode) {
-                // Overlap cards like iOS Lock Screen deck (peeking edges below front card!)
-                rowLp.topMargin = (i == 0) ? 0 : (i == 1 ? -dp(46) : -dp(50));
-                if (i == limit - 1) rowLp.bottomMargin = dp(4);
-            } else {
-                if (i > 0) rowLp.topMargin = dp(7);
-            }
-            notifListContainer.addView(row, rowLp);
-
-            if (!stackedMode && notifStackFanned && i < 6) {
-                row.setAlpha(0f);
-                row.setTranslationY(-dp(10));
-                row.animate()
-                        .alpha(1f)
-                        .translationY(0f)
-                        .setDuration(190)
-                        .setStartDelay(i * 22L)
-                        .setInterpolator(FLUID_SPRING)
-                        .start();
-            }
         }
     }
 

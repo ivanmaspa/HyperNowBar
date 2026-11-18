@@ -5,21 +5,42 @@ import android.view.ViewGroup;
 import de.robv.android.xposed.XC_MethodHook;
 import de.robv.android.xposed.XposedBridge;
 import de.robv.android.xposed.XposedHelpers;
+import java.lang.ref.WeakReference;
+import java.lang.reflect.Method;
 import java.util.Collections;
 import java.util.Set;
 import java.util.WeakHashMap;
 
 /**
- * Cleanly hides HyperOS stock lockscreen notification cards and media card
- * ONLY while strictly on Keyguard, AND also forwards keyguard_bouncer_container
- * visibility changes to KeyguardStateMonitor for instant 0ms PIN/Password hiding.
+ * 1. Cleanly hides HyperOS stock lockscreen notification cards and media card ONLY while on Keyguard.
+ * 2. Permanently keeps HyperOS 3's stretchy Magazine Lockscreen Clock in its full stretched state
+ *    (even when notifications or media arrive while unlocked/asleep!) whenever hideStockNotifications is ON.
+ * 3. Forwards keyguard_bouncer_container visibility changes to KeyguardStateMonitor.
  */
 public final class StockNotifHider {
     private static volatile boolean hideActive = false;
+    private static volatile boolean alwaysKeepClockStretched = true;
     private static volatile boolean hasTrackedViews = false;
     private static boolean hooksInstalled = false;
+    private static volatile WeakReference<Object> clockContainerRef = new WeakReference<>(null);
     private static final Set<View> trackedViews =
             Collections.synchronizedSet(Collections.newSetFromMap(new WeakHashMap<>()));
+
+    public static void setAlwaysKeepClockStretched(boolean keepStretched) {
+        alwaysKeepClockStretched = keepStretched;
+        if (keepStretched) {
+            forceClockExpanded();
+        }
+    }
+
+    public static void forceClockExpanded() {
+        if (!alwaysKeepClockStretched) return;
+        Object cc = clockContainerRef.get();
+        if (cc == null) return;
+        try {
+            XposedHelpers.callMethod(cc, "setMHasNotification", Boolean.FALSE);
+        } catch (Throwable ignored) {}
+    }
 
     public static void installHooks(ClassLoader classLoader) {
         if (hooksInstalled) return;
@@ -81,9 +102,9 @@ public final class StockNotifHider {
     }
 
     /**
-     * Tells HyperOS 3's stretchy Magazine Lockscreen Clock (KeyguardClockContainer & animation classes)
-     * that there are 0 stock lockscreen notifications whenever StockNotifHider is hiding them,
-     * allowing the clock to stretch to its full vertical height!
+     * Permanently forces HyperOS 3's stretchy Magazine Lockscreen Clock to see 0 notifications
+     * and 0 lockscreen media whenever alwaysKeepClockStretched is true (even while unlocked/sleeping!),
+     * preventing ANY compact-clock regression!
      */
     private static void installClockStretchHooks(ClassLoader classLoader) {
         String[] clockClasses = new String[] {
@@ -99,11 +120,30 @@ public final class StockNotifHider {
         for (String clsName : clockClasses) {
             Class<?> cls = XposedHelpers.findClassIfExists(clsName, classLoader);
             if (cls == null) continue;
+
+            if (clsName.endsWith("KeyguardClockContainer")) {
+                try {
+                    XposedBridge.hookAllConstructors(cls, new XC_MethodHook() {
+                        @Override
+                        protected void afterHookedMethod(MethodHookParam param) {
+                            if (param.thisObject != null) {
+                                clockContainerRef = new WeakReference<>(param.thisObject);
+                            }
+                        }
+                    });
+                } catch (Throwable ignored) {}
+            }
+
             try {
-                java.lang.reflect.Method[] methods = cls.getDeclaredMethods();
-                for (java.lang.reflect.Method m : methods) {
-                    String nameLower = m.getName().toLowerCase();
-                    if (!nameLower.contains("notif")) continue;
+                Method[] methods = cls.getDeclaredMethods();
+                for (Method m : methods) {
+                    final String nameLower = m.getName().toLowerCase();
+                    boolean relevant = nameLower.contains("notif")
+                            || nameLower.contains("hasmedia")
+                            || nameLower.contains("smallclock")
+                            || nameLower.contains("tomedia");
+                    if (!relevant) continue;
+
                     Class<?>[] params = m.getParameterTypes();
                     Class<?> ret = m.getReturnType();
 
@@ -111,7 +151,7 @@ public final class StockNotifHider {
                         XposedBridge.hookMethod(m, new XC_MethodHook() {
                             @Override
                             protected void beforeHookedMethod(MethodHookParam param) {
-                                if (hideActive) {
+                                if (alwaysKeepClockStretched) {
                                     param.setResult(Boolean.FALSE);
                                 }
                             }
@@ -122,7 +162,7 @@ public final class StockNotifHider {
                         XposedBridge.hookMethod(m, new XC_MethodHook() {
                             @Override
                             protected void beforeHookedMethod(MethodHookParam param) {
-                                if (hideActive) {
+                                if (alwaysKeepClockStretched) {
                                     param.setResult(Integer.valueOf(0));
                                 }
                             }
@@ -141,7 +181,10 @@ public final class StockNotifHider {
                             XposedBridge.hookMethod(m, new XC_MethodHook() {
                                 @Override
                                 protected void beforeHookedMethod(MethodHookParam param) {
-                                    if (!hideActive || param.args == null) return;
+                                    if (!alwaysKeepClockStretched || param.args == null) return;
+                                    if (param.thisObject != null && param.thisObject.getClass().getName().endsWith("KeyguardClockContainer")) {
+                                        clockContainerRef = new WeakReference<>(param.thisObject);
+                                    }
                                     for (int i = 0; i < param.args.length; i++) {
                                         if (param.args[i] instanceof Boolean) {
                                             param.args[i] = Boolean.FALSE;
@@ -161,7 +204,7 @@ public final class StockNotifHider {
             }
         }
 
-        // Also hook NotificationStackScrollLayout visible-count queries while strictly on Keyguard
+        // Also intercept NotificationStackScrollLayout visible-count queries ONLY while on Keyguard
         Class<?> nsslCls = XposedHelpers.findClassIfExists(
                 "com.android.systemui.statusbar.notification.stack.NotificationStackScrollLayout", classLoader);
         if (nsslCls != null) {
@@ -180,7 +223,7 @@ public final class StockNotifHider {
             }
         }
 
-        XposedBridge.log("[HyperNowBar] Installed " + hookedCount + " HyperOS stretchy clock hooks");
+        XposedBridge.log("[HyperNowBar] Installed " + hookedCount + " persistent HyperOS stretchy clock hooks");
     }
 
     public static int scanHierarchy(ViewGroup root) {
@@ -198,13 +241,18 @@ public final class StockNotifHider {
             if (child == null) continue;
             if (child.getClass().getName().startsWith("com.hypernowbar.")) continue;
 
-            String clsName = child.getClass().getName().toLowerCase();
+            String clsName = child.getClass().getName();
+            if (clsName.endsWith("KeyguardClockContainer")) {
+                clockContainerRef = new WeakReference<>(child);
+            }
+
+            String clsLower = clsName.toLowerCase();
             String resName = safeResName(child);
             String resLower = resName != null ? resName.toLowerCase() : "";
 
             boolean isStockNotifContainer =
-                    clsName.contains("notificationstackscrolllayout")
-                    || clsName.contains("keyguardnotification")
+                    clsLower.contains("notificationstackscrolllayout")
+                    || clsLower.contains("keyguardnotification")
                     || resLower.equals("notification_stack_scroller")
                     || resLower.contains("keyguard_notification_container")
                     || resLower.contains("keyguard_media_container")
@@ -253,6 +301,9 @@ public final class StockNotifHider {
             if (v != null) {
                 applyStateToView(v, hide);
             }
+        }
+        if (hide && alwaysKeepClockStretched) {
+            forceClockExpanded();
         }
     }
 
