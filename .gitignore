@@ -1,0 +1,7 @@
+build/
+dist/
+*.jks
+*.keystore
+*.apk
+*.zip
+setup_and_build.ps1

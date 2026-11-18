@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">HyperNowBar</string>
+    <string name="xposed_desc">One UI 7 Now Bar &amp; ColorOS Live Capsule на экране блокировки HyperOS 3 (плеер + сообщения в одной нижней капсуле)</string>
+</resources>
