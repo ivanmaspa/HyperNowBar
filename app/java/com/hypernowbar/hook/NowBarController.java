@@ -13,6 +13,7 @@ import android.view.MotionEvent;
 import android.view.ViewGroup;
 import android.view.WindowManager;
 import android.widget.FrameLayout;
+import com.hypernowbar.config.DeviceLayoutAdapter;
 import com.hypernowbar.config.NowBarConfig;
 import com.hypernowbar.model.MediaState;
 import com.hypernowbar.model.NotifItem;
@@ -65,10 +66,11 @@ public final class NowBarController {
         if (hooksInstalled) return;
         hooksInstalled = true;
 
-        // 1. Capture SystemUI's native ActivityStarter (multiple package locations across Android 14-16 / HyperOS)
+        // 1. Capture SystemUI's native ActivityStarter (AOSP / Pixel / HyperOS / Samsung / ColorOS / OxygenOS)
         String[] starterClasses = new String[] {
             "com.android.systemui.statusbar.phone.ActivityStarterImpl",
             "com.android.systemui.statusbar.phone.MiuiActivityStarterImpl",
+            "com.oplus.systemui.statusbar.phone.OplusActivityStarterImpl",
             "com.android.systemui.ActivityStarterDelegate"
         };
         for (String sc : starterClasses) {
@@ -288,8 +290,18 @@ public final class NowBarController {
         shadeWindowView.addView(overlayView, lp);
 
         StockNotifHider.scanHierarchy(shadeWindowView);
-        mainHandler.postDelayed(() -> StockNotifHider.scanHierarchy(shadeWindowView), 1500);
-        mainHandler.postDelayed(() -> StockNotifHider.scanHierarchy(shadeWindowView), 4500);
+        DeviceLayoutAdapter.inspectLockscreenHierarchy(shadeWindowView);
+        overlayView.refreshDeviceLayout();
+        mainHandler.postDelayed(() -> {
+            StockNotifHider.scanHierarchy(shadeWindowView);
+            DeviceLayoutAdapter.inspectLockscreenHierarchy(shadeWindowView);
+            overlayView.refreshDeviceLayout();
+        }, 1500);
+        mainHandler.postDelayed(() -> {
+            StockNotifHider.scanHierarchy(shadeWindowView);
+            DeviceLayoutAdapter.inspectLockscreenHierarchy(shadeWindowView);
+            overlayView.refreshDeviceLayout();
+        }, 4500);
 
         this.mediaTracker = new MediaTracker(context, state -> overlayView.setMediaState(state));
         this.mediaTracker.start();
@@ -401,6 +413,10 @@ public final class NowBarController {
                 targetMethod.invoke(kvm, actionProxy, null, Boolean.TRUE);
             } else if (pCount == 4) {
                 targetMethod.invoke(kvm, actionProxy, null, Boolean.TRUE, null);
+            } else if (pCount == 5) {
+                Class<?>[] pt = targetMethod.getParameterTypes();
+                Object p4 = (pt[4] == boolean.class || pt[4] == Boolean.class) ? Boolean.FALSE : null;
+                targetMethod.invoke(kvm, actionProxy, null, Boolean.TRUE, null, p4);
             } else {
                 return false;
             }
@@ -513,6 +529,8 @@ public final class NowBarController {
 
         if (lastOnKeyguard) {
             StockNotifHider.scanHierarchy(shadeWindowView);
+            DeviceLayoutAdapter.inspectLockscreenHierarchy(shadeWindowView);
+            overlayView.refreshDeviceLayout();
         }
 
         boolean hideStock = config.enabled
@@ -553,6 +571,8 @@ public final class NowBarController {
                     });
                 } else if (ACTION_PING.equals(act)) {
                     int tracked = StockNotifHider.scanHierarchy(shadeWindowView);
+                    DeviceLayoutAdapter.inspectLockscreenHierarchy(shadeWindowView);
+                    DeviceLayoutAdapter.DeviceProfile dp = DeviceLayoutAdapter.detect(context);
                     Intent pong = new Intent(ACTION_PONG);
                     pong.setPackage(NowBarConfig.PACKAGE_NAME);
                     pong.putExtra("window", shadeWindowView.getClass().getSimpleName());
@@ -562,6 +582,7 @@ public final class NowBarController {
                             KeyguardStateMonitor.getKeyguardViewManager() != null || resolveActivityStarter() != null);
                     pong.putExtra("media", mediaTracker.getCurrentState().hasSession
                             ? mediaTracker.getCurrentState().title : "");
+                    pong.putExtra("deviceProfile", dp.summary);
                     try {
                         context.sendBroadcast(pong);
                     } catch (Throwable ignored) {}

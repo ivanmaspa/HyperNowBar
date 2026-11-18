@@ -204,6 +204,24 @@ public final class StockNotifHider {
             }
         }
 
+        // Also intercept AOSP/Pixel/LineageOS/NothingOS KeyguardClockSwitchController large-clock mode
+        Class<?> aospClockCls = XposedHelpers.findClassIfExists(
+                "com.android.keyguard.KeyguardClockSwitchController", classLoader);
+        if (aospClockCls != null) {
+            try {
+                XposedBridge.hookAllMethods(aospClockCls, "setHasVisibleNotifications", new XC_MethodHook() {
+                    @Override
+                    protected void beforeHookedMethod(MethodHookParam param) {
+                        if (alwaysKeepClockStretched && param.args != null && param.args.length > 0
+                                && param.args[0] instanceof Boolean) {
+                            param.args[0] = Boolean.FALSE;
+                        }
+                    }
+                });
+                hookedCount++;
+            } catch (Throwable ignored) {}
+        }
+
         // Also intercept NotificationStackScrollLayout visible-count queries ONLY while on Keyguard
         Class<?> nsslCls = XposedHelpers.findClassIfExists(
                 "com.android.systemui.statusbar.notification.stack.NotificationStackScrollLayout", classLoader);
@@ -256,7 +274,9 @@ public final class StockNotifHider {
                     || resLower.equals("notification_stack_scroller")
                     || resLower.contains("keyguard_notification_container")
                     || resLower.contains("keyguard_media_container")
-                    || resLower.contains("miui_keyguard_media");
+                    || resLower.contains("miui_keyguard_media")
+                    || resLower.contains("sec_keyguard_notification")
+                    || resLower.equals("lockscreen_notification_shelf");
 
             if (isStockNotifContainer) {
                 trackView(child);

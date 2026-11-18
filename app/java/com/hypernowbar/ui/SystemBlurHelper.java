@@ -40,28 +40,37 @@ public final class SystemBlurHelper {
 
         if (!enabled || blurRadiusPx <= 0) {
             clearMiuiBlur(targetView);
+            clearSamsungBlur(targetView);
             targetView.setBackground(glassOverlay);
             return false;
         }
 
-        // Try Path A: AOSP SurfaceFlinger BackgroundBlurDrawable (works on Android 12-16 & HyperOS 3)
+        // Try Path A: AOSP SurfaceFlinger BackgroundBlurDrawable (Pixel / AOSP / ColorOS / Nothing / Android 12-16)
         Drawable sfBlur = tryCreateSurfaceFlingerBlur(targetView, blurRadiusPx, cornerRadiusPx);
         if (sfBlur != null) {
             clearMiuiBlur(targetView);
+            clearSamsungBlur(targetView);
             LayerDrawable layered = new LayerDrawable(new Drawable[] {sfBlur, glassOverlay});
             targetView.setBackground(layered);
             logOnce("SurfaceFlinger BackgroundBlurDrawable (radius=" + blurRadiusPx + "px)");
             return true;
         }
 
-        // Try Path B: Xiaomi HyperOS native MiBackgroundBlur on View
+        // Try Path B: Xiaomi HyperOS / MIUI native MiBackgroundBlur
         if (tryApplyMiuiBlur(targetView, blurRadiusPx)) {
             targetView.setBackground(glassOverlay);
             logOnce("HyperOS MiBackgroundBlur (radius=" + blurRadiusPx + "px)");
             return true;
         }
 
-        // Fallback (e.g. inside Settings preview Activity or before attach): standard frosted glass
+        // Try Path C: Samsung One UI native SemBlurInfo GPU blur
+        if (tryApplySamsungBlur(targetView, blurRadiusPx, cornerRadiusPx)) {
+            targetView.setBackground(glassOverlay);
+            logOnce("Samsung One UI SemBlurInfo (radius=" + blurRadiusPx + "px)");
+            return true;
+        }
+
+        // Fallback (e.g. inside Settings preview Activity or ROMs without cross-window blur): frosted glass
         targetView.setBackground(glassOverlay);
         return false;
     }
@@ -120,6 +129,34 @@ public final class SystemBlurHelper {
         try {
             Method setMode = View.class.getMethod("setMiBackgroundBlurMode", int.class);
             setMode.invoke(view, 0);
+        } catch (Throwable ignored) {}
+    }
+
+    private static boolean tryApplySamsungBlur(View view, int blurRadiusPx, float cornerRadiusPx) {
+        try {
+            Class<?> builderCls = Class.forName("android.view.SemBlurInfo$Builder");
+            Object builder = builderCls.getConstructor(int.class).newInstance(0); // 0 = BLUR_MODE_WINDOW
+            try {
+                builderCls.getMethod("setRadius", int.class).invoke(builder, blurRadiusPx);
+            } catch (Throwable ignored) {}
+            try {
+                builderCls.getMethod("setBackgroundCornerRadius", float.class).invoke(builder, cornerRadiusPx);
+            } catch (Throwable ignored) {}
+            Object info = builderCls.getMethod("build").invoke(builder);
+            Class<?> infoCls = Class.forName("android.view.SemBlurInfo");
+            Method semSet = View.class.getMethod("semSetBlurInfo", infoCls);
+            semSet.invoke(view, info);
+            return true;
+        } catch (Throwable ignored) {
+            return false;
+        }
+    }
+
+    private static void clearSamsungBlur(View view) {
+        try {
+            Class<?> infoCls = Class.forName("android.view.SemBlurInfo");
+            Method semSet = View.class.getMethod("semSetBlurInfo", infoCls);
+            semSet.invoke(view, new Object[] {null});
         } catch (Throwable ignored) {}
     }
 

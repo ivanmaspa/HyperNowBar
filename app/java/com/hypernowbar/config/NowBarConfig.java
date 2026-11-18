@@ -11,7 +11,7 @@ public final class NowBarConfig {
     public static final String PACKAGE_NAME = "com.hypernowbar";
     public static final String PREFS_NAME = "nowbar_prefs";
     public static final String ACTION_CONFIG_CHANGED = "com.hypernowbar.ACTION_CONFIG_CHANGED";
-    private static final int CURRENT_PREFS_VERSION = 4;
+    private static final int CURRENT_PREFS_VERSION = 5;
 
     public static final int STYLE_ONEUI_GLOW = 0;
     public static final int STYLE_COLOROS_GLASS = 1;
@@ -59,6 +59,8 @@ public final class NowBarConfig {
     public int animSpeedPct = 100;              // 50..180%
 
     // Behavior
+    public boolean autoAdaptPosition = true;    // Auto-adapt bottom margin to UDFPS (high) vs no-UDFPS (low) on any phone
+    public boolean hideLauncherIcon = false;    // Hide app icon from launcher (open via Vector/LSPosed module button)
     public boolean hideOnBouncer = true;
     public boolean hideOnAod = true;
     public boolean alwaysShowCapsule = false;
@@ -97,6 +99,8 @@ public final class NowBarConfig {
         c.manualAccentColor = manualAccentColor;
         c.animStyle = animStyle;
         c.animSpeedPct = animSpeedPct;
+        c.autoAdaptPosition = autoAdaptPosition;
+        c.hideLauncherIcon = hideLauncherIcon;
         c.hideOnBouncer = hideOnBouncer;
         c.hideOnAod = hideOnAod;
         c.alwaysShowCapsule = alwaysShowCapsule;
@@ -144,6 +148,8 @@ public final class NowBarConfig {
         c.manualAccentColor = prefs.getInt("manualAccentColor", c.manualAccentColor);
         c.animStyle = prefs.getInt("animStyle", c.animStyle);
         c.animSpeedPct = prefs.getInt("animSpeedPct", c.animSpeedPct);
+        c.autoAdaptPosition = prefs.getBoolean("autoAdaptPosition", c.autoAdaptPosition);
+        c.hideLauncherIcon = prefs.getBoolean("hideLauncherIcon", c.hideLauncherIcon);
         c.hideOnBouncer = prefs.getBoolean("hideOnBouncer", c.hideOnBouncer);
         c.hideOnAod = prefs.getBoolean("hideOnAod", c.hideOnAod);
         c.alwaysShowCapsule = prefs.getBoolean("alwaysShowCapsule", c.alwaysShowCapsule);
@@ -190,6 +196,8 @@ public final class NowBarConfig {
             c.manualAccentColor = xprefs.getInt("manualAccentColor", c.manualAccentColor);
             c.animStyle = xprefs.getInt("animStyle", c.animStyle);
             c.animSpeedPct = xprefs.getInt("animSpeedPct", c.animSpeedPct);
+            c.autoAdaptPosition = xprefs.getBoolean("autoAdaptPosition", c.autoAdaptPosition);
+            c.hideLauncherIcon = xprefs.getBoolean("hideLauncherIcon", c.hideLauncherIcon);
             c.hideOnBouncer = xprefs.getBoolean("hideOnBouncer", c.hideOnBouncer);
             c.hideOnAod = xprefs.getBoolean("hideOnAod", c.hideOnAod);
             c.alwaysShowCapsule = xprefs.getBoolean("alwaysShowCapsule", c.alwaysShowCapsule);
@@ -234,6 +242,8 @@ public final class NowBarConfig {
             .putInt("manualAccentColor", manualAccentColor)
             .putInt("animStyle", animStyle)
             .putInt("animSpeedPct", animSpeedPct)
+            .putBoolean("autoAdaptPosition", autoAdaptPosition)
+            .putBoolean("hideLauncherIcon", hideLauncherIcon)
             .putBoolean("hideOnBouncer", hideOnBouncer)
             .putBoolean("hideOnAod", hideOnAod)
             .putBoolean("alwaysShowCapsule", alwaysShowCapsule)
@@ -270,6 +280,8 @@ public final class NowBarConfig {
         intent.putExtra("manualAccentColor", manualAccentColor);
         intent.putExtra("animStyle", animStyle);
         intent.putExtra("animSpeedPct", animSpeedPct);
+        intent.putExtra("autoAdaptPosition", autoAdaptPosition);
+        intent.putExtra("hideLauncherIcon", hideLauncherIcon);
         intent.putExtra("hideOnBouncer", hideOnBouncer);
         intent.putExtra("hideOnAod", hideOnAod);
         intent.putExtra("alwaysShowCapsule", alwaysShowCapsule);
@@ -307,6 +319,8 @@ public final class NowBarConfig {
         c.manualAccentColor = intent.getIntExtra("manualAccentColor", c.manualAccentColor);
         c.animStyle = intent.getIntExtra("animStyle", c.animStyle);
         c.animSpeedPct = intent.getIntExtra("animSpeedPct", c.animSpeedPct);
+        c.autoAdaptPosition = intent.getBooleanExtra("autoAdaptPosition", c.autoAdaptPosition);
+        c.hideLauncherIcon = intent.getBooleanExtra("hideLauncherIcon", c.hideLauncherIcon);
         c.hideOnBouncer = intent.getBooleanExtra("hideOnBouncer", c.hideOnBouncer);
         c.hideOnAod = intent.getBooleanExtra("hideOnAod", c.hideOnAod);
         c.alwaysShowCapsule = intent.getBooleanExtra("alwaysShowCapsule", c.alwaysShowCapsule);
@@ -375,8 +389,11 @@ public final class NowBarConfig {
         manualAccentColor = parseInt(map.get("manualAccentColor"), manualAccentColor);
         animStyle = parseInt(map.get("animStyle"), animStyle);
         animSpeedPct = parseInt(map.get("animSpeedPct"), animSpeedPct);
-        bottomMarginDp = parseInt(map.get("bottomMarginDp"), bottomMarginDp);
-        sheetBottomMarginDp = parseInt(map.get("sheetBottomMarginDp"), sheetBottomMarginDp);
+        // Preserve device-specific auto-adapted position when applying built-in visual presets
+        if (!autoAdaptPosition) {
+            bottomMarginDp = parseInt(map.get("bottomMarginDp"), bottomMarginDp);
+            sheetBottomMarginDp = parseInt(map.get("sheetBottomMarginDp"), sheetBottomMarginDp);
+        }
         cornerRadiusDp = parseInt(map.get("cornerRadiusDp"), cornerRadiusDp);
         borderWidthDp = parseInt(map.get("borderWidthDp"), borderWidthDp);
         pillFontSizeSp = parseInt(map.get("pillFontSizeSp"), pillFontSizeSp);

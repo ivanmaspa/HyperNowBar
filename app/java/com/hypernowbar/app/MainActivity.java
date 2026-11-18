@@ -3,10 +3,12 @@ package com.hypernowbar.app;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.BroadcastReceiver;
+import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.SharedPreferences;
+import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Color;
@@ -31,6 +33,7 @@ import android.widget.SeekBar;
 import android.widget.Switch;
 import android.widget.TextView;
 import android.widget.Toast;
+import com.hypernowbar.config.DeviceLayoutAdapter;
 import com.hypernowbar.config.NowBarConfig;
 import com.hypernowbar.config.NowBarPresets;
 import com.hypernowbar.hook.NowBarController;
@@ -100,14 +103,14 @@ public final class MainActivity extends Activity {
         LinearLayout titleCol = new LinearLayout(this);
         titleCol.setOrientation(LinearLayout.VERTICAL);
         TextView titleTv = new TextView(this);
-        titleTv.setText("HyperNowBar 1.G.1");
+        titleTv.setText("HyperNowBar 1.G.2");
         titleTv.setTextColor(Color.WHITE);
         titleTv.setTextSize(TypedValue.COMPLEX_UNIT_SP, 23f);
         titleTv.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
         titleCol.addView(titleTv);
 
         TextView subTv = new TextView(this);
-        subTv.setText("Now Bar & Fluid Glass • HyperOS 3");
+        subTv.setText(DeviceLayoutAdapter.getDeviceBanner());
         subTv.setTextColor(0x99FFFFFF);
         subTv.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12.5f);
         titleCol.addView(subTv);
@@ -115,7 +118,7 @@ public final class MainActivity extends Activity {
 
         boolean active = isModuleActive();
         TextView statusBadge = new TextView(this);
-        statusBadge.setText(active ? "Релиз 1.G.1" : "SystemUI");
+        statusBadge.setText(active ? "Релиз 1.G.2" : "SystemUI");
         statusBadge.setTextColor(active ? 0xFF071B13 : 0xFF101828);
         statusBadge.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11.5f);
         statusBadge.setTypeface(Typeface.DEFAULT_BOLD);
@@ -507,7 +510,7 @@ public final class MainActivity extends Activity {
         controlsContainer.addView(blurCard);
 
         // === GEOMETRY & DIMENSIONS ===
-        controlsContainer.addView(sectionHeader("Позиция и геометрия"));
+        controlsContainer.addView(sectionHeader("Адаптация под экран и геометрия"));
         LinearLayout widthRow = new LinearLayout(this);
         widthRow.setOrientation(LinearLayout.HORIZONTAL);
         String[] widthNames = {"Компактная", "Стандарт", "Широкая"};
@@ -533,16 +536,43 @@ public final class MainActivity extends Activity {
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         gLp.topMargin = dp(10);
 
-        addSliderRow(geomCard,
-                "Высота капсулы от низа (над сканером: 145–165 dp)",
-                16, 340, config.bottomMarginDp, " dp",
-                val -> { config.bottomMarginDp = val; persistAndBroadcast(); });
+        DeviceLayoutAdapter.DeviceProfile devProfile = DeviceLayoutAdapter.detect(this);
+        int shownCapsuleDp = config.autoAdaptPosition ? devProfile.recommendedCapsuleBottomDp : config.bottomMarginDp;
+        int shownSheetDp = config.autoAdaptPosition ? devProfile.recommendedSheetBottomDp : config.sheetBottomMarginDp;
+
+        addSwitchRow(geomCard,
+                "Авто-высота под телефон и сканер",
+                devProfile.summary + " (телефоны без подэкранного отпечатка располагаются ниже)",
+                config.autoAdaptPosition,
+                checked -> {
+                    config.autoAdaptPosition = checked;
+                    if (checked) {
+                        config.bottomMarginDp = devProfile.recommendedCapsuleBottomDp;
+                        config.sheetBottomMarginDp = devProfile.recommendedSheetBottomDp;
+                        rebuildControls();
+                    }
+                    persistAndBroadcast();
+                });
         addDivider(geomCard);
 
         addSliderRow(geomCard,
-                "Высота открытого меню от низа",
-                80, 360, config.sheetBottomMarginDp, " dp",
-                val -> { config.sheetBottomMarginDp = val; persistAndBroadcast(); });
+                "Высота капсулы от низа (ручная подстройка)",
+                16, 340, shownCapsuleDp, " dp",
+                val -> {
+                    config.autoAdaptPosition = false;
+                    config.bottomMarginDp = val;
+                    persistAndBroadcast();
+                });
+        addDivider(geomCard);
+
+        addSliderRow(geomCard,
+                "Высота открытого меню от низа (ручная подстройка)",
+                24, 360, shownSheetDp, " dp",
+                val -> {
+                    config.autoAdaptPosition = false;
+                    config.sheetBottomMarginDp = val;
+                    persistAndBroadcast();
+                });
         addDivider(geomCard);
 
         addSliderRow(geomCard,
@@ -635,6 +665,17 @@ public final class MainActivity extends Activity {
                 "Отображать мини-капсулу даже без музыки и уведомлений",
                 config.alwaysShowCapsule,
                 checked -> { config.alwaysShowCapsule = checked; persistAndBroadcast(); });
+        addDivider(actionsCard);
+
+        addSwitchRow(actionsCard,
+                "Скрыть иконку с рабочего стола",
+                "Убирает ярлык из меню приложений — настройки всегда открываются кнопкой в Vector / LSPosed",
+                isLauncherIconHidden(),
+                checked -> {
+                    config.hideLauncherIcon = checked;
+                    setLauncherIconHidden(checked);
+                    persistAndBroadcast();
+                });
 
         controlsContainer.addView(actionsCard);
     }
@@ -676,10 +717,12 @@ public final class MainActivity extends Activity {
                 int notifs = intent.getIntExtra("notifs", 0);
                 boolean hasStarter = intent.getBooleanExtra("hasStarter", false);
                 String media = intent.getStringExtra("media");
+                String devProf = intent.getStringExtra("deviceProfile");
                 String mediaPart = (media != null && !media.isEmpty()) ? (" • Плеер: " + media) : "";
+                String devPart = (devProf != null && !devProf.isEmpty()) ? ("\n" + devProf) : "";
                 liveDiagTv.setText("SystemUI подключён (" + win + ") • Уведомлений: " + notifs
                         + " • Переходы: " + (hasStarter ? "OK" : "резерв")
-                        + " • Слоёв: " + tracked + mediaPart);
+                        + " • Слоёв: " + tracked + mediaPart + devPart);
                 liveDiagTv.setTextColor(0xFFB0F2DA);
                 GradientDrawable okBg = new GradientDrawable();
                 okBg.setColor(0x1F4AE3B5);
@@ -818,7 +861,7 @@ public final class MainActivity extends Activity {
 
         mockNotifs = new ArrayList<>();
         String[][] demos = {
-            {"AyuGram", "Артём", "Релиз 1.G.1 — листай стопку и пробуй пресеты!"},
+            {"AyuGram", "Артём", "Релиз 1.G.2 — адаптация под любые телефоны и сканеры!"},
             {"VK", "Максим", "Задний блюр и компактный Бета-режим выглядят топ"},
             {"Telegram", "Дима", "Скинул новый трек, оцени в плеере"},
             {"WhatsApp", "Саша", "Встречаемся в 19:00 у центра"}
@@ -904,6 +947,32 @@ public final class MainActivity extends Activity {
         } catch (Throwable ignored) {}
     }
 
+    private boolean isLauncherIconHidden() {
+        try {
+            ComponentName cn = new ComponentName(this, "com.hypernowbar.app.LauncherAlias");
+            int state = getPackageManager().getComponentEnabledSetting(cn);
+            return state == PackageManager.COMPONENT_ENABLED_STATE_DISABLED;
+        } catch (Throwable ignored) {
+            return config.hideLauncherIcon;
+        }
+    }
+
+    private void setLauncherIconHidden(boolean hide) {
+        try {
+            ComponentName cn = new ComponentName(this, "com.hypernowbar.app.LauncherAlias");
+            int newState = hide
+                    ? PackageManager.COMPONENT_ENABLED_STATE_DISABLED
+                    : PackageManager.COMPONENT_ENABLED_STATE_ENABLED;
+            getPackageManager().setComponentEnabledSetting(cn, newState, PackageManager.DONT_KILL_APP);
+            Toast.makeText(this,
+                    hide ? "Иконка скрыта. Открывайте настройки из Vector / LSPosed"
+                         : "Иконка возвращена на рабочий стол",
+                    Toast.LENGTH_LONG).show();
+        } catch (Throwable t) {
+            Toast.makeText(this, "Не удалось изменить видимость иконки: " + t.getMessage(), Toast.LENGTH_SHORT).show();
+        }
+    }
+
     private void restartSystemUi() {
         try {
             Process p = Runtime.getRuntime().exec(new String[] {"su", "-c", "killall com.android.systemui"});
@@ -911,10 +980,10 @@ public final class MainActivity extends Activity {
             if (code == 0) {
                 Toast.makeText(this, "SystemUI перезапущен", Toast.LENGTH_SHORT).show();
             } else {
-                Toast.makeText(this, "Выдайте root приложению HyperNowBar в KernelSU Next или перезагрузите телефон", Toast.LENGTH_LONG).show();
+                Toast.makeText(this, "Выдайте root приложению HyperNowBar (KernelSU / Magisk / APatch) или перезагрузите телефон", Toast.LENGTH_LONG).show();
             }
         } catch (Throwable t) {
-            Toast.makeText(this, "Выдайте root приложению HyperNowBar в KernelSU Next или перезагрузите телефон", Toast.LENGTH_LONG).show();
+            Toast.makeText(this, "Выдайте root приложению HyperNowBar (KernelSU / Magisk / APatch) или перезагрузите телефон", Toast.LENGTH_LONG).show();
         }
     }
 

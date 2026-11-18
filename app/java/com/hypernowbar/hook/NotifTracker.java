@@ -58,6 +58,10 @@ public final class NotifTracker {
         IGNORED_SYSTEM_PACKAGES.add("com.miui.securitycenter");
         IGNORED_SYSTEM_PACKAGES.add("com.miui.powerkeeper");
         IGNORED_SYSTEM_PACKAGES.add("com.miui.daemon");
+        IGNORED_SYSTEM_PACKAGES.add("com.samsung.android.lool");
+        IGNORED_SYSTEM_PACKAGES.add("com.oplus.battery");
+        IGNORED_SYSTEM_PACKAGES.add("com.coloros.phonemanager");
+        IGNORED_SYSTEM_PACKAGES.add("com.oneplus.security");
     }
 
     public NotifTracker(Context context, Listener listener) {

@@ -255,9 +255,18 @@ public final class KeyguardStateMonitor {
 
     public static void bindBouncerContainer(ViewGroup root) {
         if (root == null) return;
-        View found = findViewByResName(root, "keyguard_bouncer_container");
-        if (found != null) {
-            bouncerContainerRef = new WeakReference<>(found);
+        String[] candidates = new String[] {
+            "keyguard_bouncer_container",
+            "primary_bouncer_container",
+            "bouncer_container",
+            "keyguard_security_container"
+        };
+        for (String name : candidates) {
+            View found = findViewByResName(root, name);
+            if (found != null) {
+                bouncerContainerRef = new WeakReference<>(found);
+                return;
+            }
         }
     }
 
@@ -312,6 +321,12 @@ public final class KeyguardStateMonitor {
             } catch (Throwable ignored) {}
             try {
                 Object res = XposedHelpers.callMethod(kvm, "isBouncerShowing");
+                if (res instanceof Boolean) {
+                    return ((Boolean) res) || viewSaysVisible;
+                }
+            } catch (Throwable ignored) {}
+            try {
+                Object res = XposedHelpers.callMethod(kvm, "primaryBouncerIsOrWillBeShowing");
                 if (res instanceof Boolean) {
                     return ((Boolean) res) || viewSaysVisible;
                 }

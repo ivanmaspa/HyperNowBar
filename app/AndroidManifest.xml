@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.hypernowbar"
-    android:versionCode="301"
-    android:versionName="1.G.1">
+    android:versionCode="302"
+    android:versionName="1.G.2">
 
     <uses-sdk
         android:minSdkVersion="31"
@@ -16,7 +16,7 @@
         android:supportsRtl="true"
         android:theme="@style/AppTheme">
 
-        <!-- Xposed / Vector (LSPosed) Metadata -->
+        <!-- Xposed / Vector / LSPosed Metadata -->
         <meta-data
             android:name="xposedmodule"
             android:value="true" />
@@ -33,6 +33,7 @@
             android:name="xposedsharedprefs"
             android:value="true" />
 
+        <!-- Always enabled so Vector / LSPosed "Open / Settings" button works even when launcher icon is hidden -->
         <activity
             android:name=".app.MainActivity"
             android:exported="true"
@@ -40,9 +41,24 @@
             android:windowSoftInputMode="adjustResize">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
+                <category android:name="de.robv.android.xposed.category.MODULE_SETTINGS" />
             </intent-filter>
         </activity>
+
+        <!-- Toggleable home-screen launcher icon alias -->
+        <activity-alias
+            android:name=".app.LauncherAlias"
+            android:enabled="true"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher"
+            android:label="@string/app_name"
+            android:roundIcon="@mipmap/ic_launcher"
+            android:targetActivity=".app.MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
 
     </application>
 </manifest>

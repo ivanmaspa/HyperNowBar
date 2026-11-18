@@ -28,6 +28,7 @@ import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.SeekBar;
 import android.widget.TextView;
+import com.hypernowbar.config.DeviceLayoutAdapter;
 import com.hypernowbar.config.NowBarConfig;
 import com.hypernowbar.model.MediaState;
 import com.hypernowbar.model.NotifItem;
@@ -622,30 +623,46 @@ public final class NowBarOverlayView extends FrameLayout {
     public void setConfig(NowBarConfig newConfig) {
         if (newConfig == null) return;
         this.config = newConfig.copy();
-
-        LayoutParams pillLp = (LayoutParams) capsulePill.getLayoutParams();
-        pillLp.bottomMargin = previewMode ? dp(18) : dp(config.bottomMarginDp);
-        capsulePill.setLayoutParams(pillLp);
-
-        int maxW = getContext().getResources().getDisplayMetrics().widthPixels;
-        int targetSheetW = config.betaCompactMode
-                ? Math.min(maxW - dp(44), dp(336))
-                : Math.min(maxW - dp(28), dp(376));
-        LayoutParams sheetLp = (LayoutParams) expandedSheet.getLayoutParams();
-        sheetLp.width = targetSheetW;
-        sheetLp.bottomMargin = previewMode ? dp(14) : dp(Math.max(config.sheetBottomMarginDp, config.bottomMarginDp));
-        expandedSheet.setLayoutParams(sheetLp);
-
-        int titleMaxDp = config.capsuleWidthMode == NowBarConfig.WIDTH_COMPACT ? 72
-                : (config.capsuleWidthMode == NowBarConfig.WIDTH_WIDE ? 148 : 106);
-        pillTitleView.setMaxWidth(dp(titleMaxDp));
-        pillNotifSnippet.setMaxWidth(dp(titleMaxDp + 24));
-        pillTitleView.setTextSize(TypedValue.COMPLEX_UNIT_SP, config.pillFontSizeSp);
-        pillNotifSnippet.setTextSize(TypedValue.COMPLEX_UNIT_SP, config.pillFontSizeSp);
-
+        applyAdaptiveGeometry();
         applyBetaLayoutDensity();
         applyVisualTheme();
         refreshContent();
+    }
+
+    public void refreshDeviceLayout() {
+        applyAdaptiveGeometry();
+    }
+
+    private void applyAdaptiveGeometry() {
+        android.util.DisplayMetrics dm = getContext().getResources().getDisplayMetrics();
+        int screenMinPx = Math.min(dm.widthPixels, dm.heightPixels);
+        int screenWidthDp = Math.round(dm.widthPixels / (dm.density > 0f ? dm.density : 3f));
+
+        int effPillBottomDp = DeviceLayoutAdapter.resolveEffectiveCapsuleBottomDp(getContext(), config);
+        int effSheetBottomDp = DeviceLayoutAdapter.resolveEffectiveSheetBottomDp(getContext(), config);
+
+        LayoutParams pillLp = (LayoutParams) capsulePill.getLayoutParams();
+        pillLp.bottomMargin = previewMode ? dp(18) : dp(effPillBottomDp);
+        capsulePill.setLayoutParams(pillLp);
+
+        int targetSheetW = config.betaCompactMode
+                ? Math.min(screenMinPx - dp(36), dp(336))
+                : Math.min(screenMinPx - dp(24), dp(380));
+        LayoutParams sheetLp = (LayoutParams) expandedSheet.getLayoutParams();
+        sheetLp.width = Math.max(dp(260), targetSheetW);
+        sheetLp.bottomMargin = previewMode ? dp(14) : dp(Math.max(effSheetBottomDp, effPillBottomDp));
+        expandedSheet.setLayoutParams(sheetLp);
+
+        int baseMaxDp = config.capsuleWidthMode == NowBarConfig.WIDTH_COMPACT ? 72
+                : (config.capsuleWidthMode == NowBarConfig.WIDTH_WIDE ? 148 : 106);
+        // Adapt title width for compact / narrow displays (< 360 dp) so quick controls never clip
+        if (screenWidthDp < 360) {
+            baseMaxDp = Math.max(58, baseMaxDp - 18);
+        }
+        pillTitleView.setMaxWidth(dp(baseMaxDp));
+        pillNotifSnippet.setMaxWidth(dp(baseMaxDp + 24));
+        pillTitleView.setTextSize(TypedValue.COMPLEX_UNIT_SP, config.pillFontSizeSp);
+        pillNotifSnippet.setTextSize(TypedValue.COMPLEX_UNIT_SP, config.pillFontSizeSp);
     }
 
     private void applyBetaLayoutDensity() {
